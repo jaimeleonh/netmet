@@ -9,7 +9,8 @@ action() {
     cd nanoaod_base_analysis
     #local this_file="$( [ ! -z "$ZSH_VERSION" ] && echo "${(%):-%x}" || echo "${BASH_SOURCE[0]}" )"
     #local this_dir="$( cd "$( dirname "$this_file" )" && pwd )"
-    export CMT_BASE="DUMMY"
+    #export CMT_BASE=$PWD
+    export CMT_BASE="/home/hep/jleonhol/netmet/nanoaod_base_analysis"
     if [[ "$CMT_BASE" == "DUMMY" ]]; then
         echo "Need to change the path stored in CMT_BASE to the present folder"
         return "1"
@@ -88,6 +89,9 @@ action() {
     [ -z "$CMT_STORE_EOS_MERGECATEGORIZATION" ] && export CMT_STORE_EOS_MERGECATEGORIZATION="$CMT_STORE_EOS"
     [ -z "$CMT_STORE_EOS_SHARDS" ] && export CMT_STORE_EOS_SHARDS="$CMT_STORE_EOS"
     [ -z "$CMT_STORE_EOS_EVALUATION" ] && export CMT_STORE_EOS_EVALUATION="$CMT_STORE_EOS"
+    
+    export CMT_REMOTE_PREPROCESSING="1"
+    
     if [ -n "$CMT_IC_USER" ]; then
        if [ -n "$CMT_TMPDIR" ]; then
          export TMPDIR="$CMT_TMPDIR"
@@ -97,10 +101,10 @@ action() {
        mkdir -p "$TMPDIR"
     fi
 
-    if [[ $CMT_IC_USER == jleonhol ]]; then
-        echo "running export CMT_STORE_EOS_CATEGORIZATION=/vols/cms/khl216/cmt..."
-        export CMT_STORE_EOS_CATEGORIZATION=/vols/cms/khl216/cmt
-    fi
+    #if [[ $CMT_IC_USER == jleonhol ]]; then
+    #    echo "running export CMT_STORE_EOS_CATEGORIZATION=/vols/cms/khl216/cmt..."
+    #    export CMT_STORE_EOS_CATEGORIZATION=/vols/cms/khl216/cmt
+    #fi
 
     # create some dirs already
     mkdir -p "$CMT_TMP_DIR"
@@ -149,6 +153,7 @@ action() {
     cmt_add_bin "$CMT_BASE/bin"
     cmt_add_py "$CMT_BASE"
     cmt_add_py "$CMT_BASE/../"
+    cmt_add_py "$CMT_BASE/../L1NetMET/netMET/"
 
     # variables for external software
     export GLOBUS_THREAD_MODEL="none"
@@ -192,73 +197,6 @@ action() {
         
         eval `scramv1 runtime -sh`
 
-        compile="0"
-        export NANOTOOLS_PATH="PhysicsTools/NanoAODTools"
-        if [ ! -d "$NANOTOOLS_PATH" ]; then
-          git clone https://github.com/cms-nanoAOD/nanoAOD-tools.git PhysicsTools/NanoAODTools
-          compile="1"
-        fi
-
-        export BASEMODULES_PATH="Base/Modules"
-        if [ ! -d "$BASEMODULES_PATH" ]; then
-          git clone https://gitlab.cern.ch/cms-phys-ciemat/cmt-base-modules.git Base/Modules
-          compile="1"
-        fi
-
-        export BASEFILTERS_PATH="Base/Filters"
-        if [ ! -d "$BASEFILTERS_PATH" ]; then
-          git clone https://gitlab.cern.ch/cms-phys-ciemat/event-filters.git Base/Filters
-          compile="1"
-        fi
-
-        export DQCD_PATH="DQCD/Modules"
-        if [ ! -d "$DQCD_PATH" ]; then
-          git clone https://github.com/ic-dqcd/dqcd-modules.git DQCD/Modules
-          compile="1"
-        fi
-
-        export CORRECTIONS_PATH="Corrections"
-        cmt_add_root_inc $(correction config --incdir)
-        if [ ! -d "$CORRECTIONS_PATH" ]; then
-           git clone https://gitlab.cern.ch/cms-phys-ciemat/jme-corrections.git Corrections/JME
-           cd Corrections/JME/data
-           wget https://github.com/cms-jet/JECDatabase/raw/master/tarballs/Summer19UL18_V5_MC.tar.gz
-           wget https://github.com/cms-jet/JECDatabase/raw/master/tarballs/Summer19UL17_V5_MC.tar.gz
-           wget https://github.com/cms-jet/JECDatabase/raw/master/tarballs/Summer19UL16_V7_MC.tar.gz
-           wget https://github.com/cms-jet/JECDatabase/raw/master/tarballs/Summer19UL16APV_V7_MC.tar.gz
-           cd -
-
-          git clone https://gitlab.cern.ch/cms-phys-ciemat/lum-corrections.git Corrections/LUM
-          # git clone https://gitlab.cern.ch/cms-phys-ciemat/muo-corrections.git Corrections/MUO
-          # git clone https://gitlab.cern.ch/cms-phys-ciemat/egm-corrections.git Corrections/EGM
-          # git clone https://gitlab.cern.ch/cms-phys-ciemat/btv-corrections.git Corrections/BTV
-          compile="1"
-        fi
-
-        export COMBINE_PATH="HiggsAnalysis/CombinedLimit"
-        if [ ! -d "$COMBINE_PATH" ]; then
-          git clone https://github.com/cms-analysis/HiggsAnalysis-CombinedLimit.git -b v9.1.0 HiggsAnalysis/CombinedLimit
-          compile="1"
-        fi
-
-        export COMBINEHARVESTER_PATH="CombineHarvester"
-        if [ ! -d "$COMBINEHARVESTER_PATH" ]; then
-          git clone https://github.com/cms-analysis/CombineHarvester -b v2.1.0
-          cd CombineHarvester
-          rm -r CombinePdfs
-          rm CombineTools/bin/*
-          rm CombineTools/src/*
-          rm CombineTools/interface/*
-          rm CombineTools/macros/*
-          cd -
-          compile="1"
-        fi
-
-        if [ "$compile" == "1" ]
-        then
-            scram b
-        fi
-
         #export COMBINE_PATH="HiggsAnalysis/CombinedLimit"
         #if [ ! -d "$COMBINE_PATH" ]; then
         #    git clone https://github.com/cms-analysis/HiggsAnalysis-CombinedLimit.git $COMBINE_PATH
@@ -300,7 +238,16 @@ action() {
             cmt_pip_install sphinx_rtd_theme
             cmt_pip_install sphinx_design
             cmt_pip_install envyaml
-            cmt_pip_install matplotlib==3.4.3
+            cmt_pip_install matplotlib==3.5.1
+            cmt_pip_install tensorflow==2.10.0
+            cmt_pip_install uproot==5.2.1
+            cmt_pip_install pandas
+            cmt_pip_install scikeras==0.12.0
+            cmt_pip_install mplhep==0.3.32
+            cmt_pip_install pyarrow==15.0.0
+            cmt_pip_install tables==3.8.0
+            cmt_pip_install fsspec-xrootd
+            cmt_pip_install xrootd
         fi
 
         # gfal python bindings
