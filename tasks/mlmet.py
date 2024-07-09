@@ -36,10 +36,10 @@ class MLTrainingTask(ConfigTask):
         # "baseline_os_odd")
     feature_tag = luigi.Parameter(default="default", description="the tag of features to use for "
         "the training, default: default")
-    architecture = luigi.Parameter(default="dense:256_64_16:relu", description="a string "
+    architecture = luigi.Parameter(default="256_64_16:relu", description="a string "
         "describing the network architecture, default: dense:256_64_16:relu")
-    loss_name = luigi.Parameter(default="wsgce", description="the name of the loss function, "
-        "default: mean_absolute_percentage_error")
+    loss_name = luigi.Parameter(default="mean_absolute_percentage_error", description="the name of "
+        "the loss function, default: mean_absolute_percentage_error")
     # l2_norm = luigi.FloatParameter(default=1e-3, description="the l2 regularization factor, "
         # "default: 1e-3")
     epochs = luigi.IntParameter(default=10, description="number of epochs for training, "
@@ -57,20 +57,20 @@ class MLTrainingTask(ConfigTask):
         "for filtering used features, requires the FeatureRanking when not empty, default: empty")
     signal_dataset_name = luigi.Parameter(default="signal", description="name of the signal dataset, "
         "default: signal")
-    background_dataset_name = luigi.Parameter(default="background", description="name of the "
-        "background dataset, default: background")
 
     training_id = luigi.IntParameter(default=law.NO_INT, description="when given, overwrite "
         "training parameters from the training with this branch in the training_workflow_file, "
         "default: empty")
     training_workflow_file = luigi.Parameter(description="filename with training parameters",
         default="hyperopt")
+    use_gpu = luigi.BoolParameter(default=False, significant=False, description="whether to launch "
+        "jobs to a gpu, default: False")
 
     training_hash_params = [
         "feature_tag", "architecture",
         "loss_name", "epochs", "learning_rate", "dropout_rate", "batch_norm",
         "batch_size", "random_seed", "min_feature_score",
-        "signal_dataset_name", "background_dataset_name"
+        "signal_dataset_name",
         # "training_category_name", "training_config_name", "l2_norm", "event_weights",
     ]
 
@@ -121,7 +121,6 @@ class MLTrainingTask(ConfigTask):
             fmt("random_seed", "RS", str),
             fmt("min_feature_score", "MF", lambda v: num(v, skip_empty=True)),
             fmt("signal_dataset_name", "SIG", str),
-            fmt("background_dataset_name", "BKG", str),
         ]
         return "__".join(part for part in parts if part)
 
@@ -167,6 +166,7 @@ class MLTraining(MLTrainingTask):
     def __init__(self, *args, **kwargs):
         super(MLTraining, self).__init__(*args, **kwargs)
         self.signal_dataset = self.config.datasets.get(self.signal_dataset_name)
+        self.device = "GPU: 0" if self.use_gpu else "CPU: 0"
 
     def requires(self):
         return InputData.req(self, dataset_name=self.signal_dataset_name, file_index=0)
@@ -175,19 +175,20 @@ class MLTraining(MLTrainingTask):
     def output(self):
         return self.local_target("model.h5")
 
-    def generate_model(self, nInput):
+    def generate_model(self, X_train):
         from keras.models import Sequential
-        from keras.layers import Dense, Dropout
-        from keras.layers import Normalization
+        from keras.layers import Dense, Dropout, Normalization
+        from keras.optimizers import Adam
+        
         model = Sequential()
         if self.batch_norm:
-            normalizer = tf.keras.layers.Normalization(input_shape=[nInput,], axis=-1)
+            normalizer = Normalization(input_shape=[X_train.shape[1],], axis=-1)
             normalizer.adapt(X_train)
             model.add(normalizer)
         arch, act = self.architecture.split(":")
         for i, nneur in enumerate(arch.split("_")):
             if i == 0:
-                model.add(Dense(nneur, input_shape=(nInput,), activation=act))
+                model.add(Dense(nneur, input_shape=(X_train.shape[1],), activation=act))
             else:
                 model.add(Dense(nneur, activation=act))
             if self.dropout_rate > 0.:
@@ -195,45 +196,60 @@ class MLTraining(MLTrainingTask):
         model.add(Dense(1))
         model.compile(
             loss=self.loss_name,
-            optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate))
+            optimizer=Adam(learning_rate=self.learning_rate))
 
         return model
 
-    def run(self):
+    def get_data(self, dataset=None, output_y=True, output_df=False):
         import utils.tools as tools
-        from sklearn.preprocessing import StandardScaler
-        
+
+        if not dataset:
+            dataset = self.signal_dataset
+
         feature_params = self.config.training_feature_groups()[self.feature_tag]
         inputs = feature_params.get("inputs", [])
         inputSums = feature_params.get("inputSums", [])
         nObj = feature_params.get("nObj", 4)
         useEmu = feature_params.get("useEmu", False)
         useMP = feature_params.get("useMP", False)
-        scaleData = feature_params.get("scaleData", False)
+        keepStruct = feature_params.get("keepStruct", False)
 
         branches = tools.getBranches(inputs, useEmu, useMP)
 
-        dataset_files = self.signal_dataset.get_files(
-            os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)[:2]
-        sig_data = tools.getArrays(dataset_files, branches, len(dataset_files), None)
+        dataset_files = dataset.get_files(
+            os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)[0:50]
+        data = tools.getArrays(dataset_files, branches, len(dataset_files), None)
+        collections = tools.getCollections(data, inputSums, inputs)
+        df = tools.makeDataframe(collections, None, nObj, keepStruct)
 
         # get puppiMETs
-        puppiMET, puppiMET_noMu = tools.getPUPPIMET(sig_data)
-        puppiMETNoMu_df = tools.arrayToDataframe(puppiMET_noMu, 'puppiMET_noMu', None)
+        if output_y:
+            puppiMET, puppiMET_noMu = tools.getPUPPIMET(data)
+            puppiMETNoMu_df = tools.arrayToDataframe(puppiMET_noMu, 'puppiMET_noMu', None)
+            return df.copy(), puppiMETNoMu_df.copy()
+        else:
+            return df.copy(), None
 
-        # define data
-        X = sig_df.copy()
-        Y = puppiMETNoMu_df.copy()
+    def run(self):
+        from sklearn.preprocessing import StandardScaler
+        import tensorflow as tf
+
+        feature_params = self.config.training_feature_groups()[self.feature_tag]
+        scaleData = feature_params.get("scaleData", False)
+        trainFrac = feature_params.get("trainFrac", 0.5)
+
+        X, Y = self.get_data()
+
         scaler = StandardScaler()
         if scaleData:
             X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
         X_train = X.sample(frac=trainFrac, random_state=3).dropna()
         Y_train = Y.loc[X_train.index]
 
-        with tf.device('CPU: 0'):
-            model = self.generate_model(X_train.shape[1])
+        with tf.device(self.device):
+            model = self.generate_model(X_train)
             model.fit(X_train, Y_train, epochs=self.epochs, batch_size=self.batch_size, verbose=1)
-            model.save(create_file_dir(self.output.path))
+            model.save(create_file_dir(self.output().path))
 
 
 class MLTrainingWorkflowBase(Task, law.LocalWorkflow, HTCondorWorkflow, SGEWorkflow, SlurmWorkflow):
@@ -281,3 +297,141 @@ class MLTrainingWorkflow(MLTrainingWorkflowBase):
         pass
 
 
+class MLValidation(MLTraining):
+    background_dataset_name = luigi.Parameter(default="background", description="name of the "
+        "background dataset, default: background")
+    l1_met_threshold = luigi.IntParameter(default=50, description="value of the MET threshold, "
+        "default: 50")
+    puppi_met_cut = luigi.IntParameter(default=0, description="minimum cut on the PuppiMET value, "
+        "default: 0")
+
+    def __init__(self, *args, **kwargs):
+        super(MLValidation, self).__init__(*args, **kwargs)
+        self.background_dataset = self.config.datasets.get(self.background_dataset_name)
+
+    def requires(self):
+        return MLTraining.vreq(self)
+
+    def output(self):
+        return {
+            "rate": self.local_target("rate_comparison.pdf"),
+            "resolution": self.local_target("resolution_comparison.pdf"),
+            "dist": self.local_target("distributions.pdf"),
+            "netmet_met": self.local_target(f"l1netmet_vs_l1met__puppimet_{self.puppi_met_cut}.pdf"),
+            "netmet_puppi": self.local_target(f"l1netmet_vs_puppimet__puppimet_{self.puppi_met_cut}.pdf"),
+            "efficiency": self.local_target("efficiency.pdf"),
+        }
+
+    def run(self):
+        import utils.plotting as plotting
+        from sklearn.preprocessing import StandardScaler
+        import tensorflow as tf
+        from matplotlib import pyplot as plt
+        import keras
+
+        feature_params = self.config.training_feature_groups()[self.feature_tag]
+        scaleData = feature_params.get("scaleData", False)
+        trainFrac = feature_params.get("trainFrac", 0.5)
+
+        X, Y = self.get_data()
+
+        scaler = StandardScaler()
+        if scaleData:
+            X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
+        X_train = X.sample(frac=trainFrac, random_state=3).dropna()
+        Y_train = Y.loc[X_train.index]
+
+        # predict values for efficiency
+        modelFile = self.input().path
+        Xp = X.drop(X_train.index)
+        with tf.device(self.device):
+            model = keras.models.load_model(modelFile)
+            Yp = model.predict(Xp)
+
+        Xp_bkg, _ = self.get_data(self.background_dataset, output_y=False)
+        if scaleData:
+            Xp_bkg[Xp_bkg.columns] = pd.DataFrame(scaler.fit_transform(Xp_bkg))
+        with tf.device(self.device):
+            model = keras.models.load_model(modelFile)
+            Yp_bkg = model.predict(Xp_bkg)
+
+        ##################################
+        # L1 MET rate vs L1 NET MET rate #
+        ##################################
+
+        l1NetMET_bkg = Yp_bkg.flatten()
+        l1MET_bkg = Xp_bkg['methf_0_pt']
+
+        ax = plt.subplot()
+        # rate plots must be in bins of GeV
+        xrange = [0, 200]
+        bins = xrange[1]
+
+        rateHist = plt.hist(l1MET_bkg, bins=bins, range=xrange, histtype='step', label='L1 MET Rate', cumulative=-1, log=True)
+        rateHist_netMET = plt.hist(l1NetMET_bkg, bins=bins, range=xrange, histtype='step', label='L1 NET MET Rate', cumulative=-1, log=True)
+        plt.legend()
+        plt.savefig(create_file_dir(self.output()["rate"].path))
+        plt.close('all')
+
+        # get rate at threshold
+        l1MET_fixed_rate = rateHist[0][int(self.l1_met_threshold) * int((xrange[1] / bins))]
+        netMET_thresh = plotting.getThreshForRate(rateHist_netMET[0], bins, l1MET_fixed_rate)
+
+        ##################
+        # MET Resolution #
+        ##################
+
+        l1MET = X['methf_0_pt']
+        l1NetMET = Yp.flatten()
+        l1MET_test = l1MET.drop(X_train.index)
+        puppiMETNoMu_df_test = Y.drop(X_train.index)
+        plt.hist((l1MET_test - puppiMETNoMu_df_test['PuppiMET_pt']), bins=80, range=[-100, 100], label="L1 MET Diff", histtype='step')
+        plt.hist((l1NetMET - puppiMETNoMu_df_test['PuppiMET_pt']), bins=80, range=[-100, 100], label="L1 NET MET Diff", histtype='step')
+        plt.legend()
+        plt.savefig(create_file_dir(self.output()["resolution"].path))
+        plt.close('all')
+
+        #################
+        # Distributions #
+        #################
+
+        plt.hist(puppiMETNoMu_df_test['PuppiMET_pt'], bins=100, range=[0, 200], histtype='step', log=True, label="PUPPI MET NoMu")
+        plt.hist(l1MET_test, bins=100, range=[0, 200], histtype='step', label="L1MET")
+        plt.hist(l1NetMET, bins=100, range=[0, 200], histtype='step', label="L1 Net MET ")  
+        plt.legend(fontsize=16)
+        plt.savefig(create_file_dir(self.output()["dist"].path))
+        plt.close('all')
+
+        import awkward as ak
+        plt.hist2d(ak.to_numpy(ak.flatten(Yp)), l1MET_test, bins=[50, 50],
+            range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
+                [self.puppi_met_cut, 200 + self.puppi_met_cut]])
+        plt.savefig(create_file_dir(self.output()["netmet_met"].path))
+        plt.close('all')
+
+        plt.hist2d(ak.to_numpy(ak.flatten(Yp)), ak.to_numpy(puppiMETNoMu_df_test['PuppiMET_pt']),
+            bins=[50, 50],
+            range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
+                [self.puppi_met_cut, 200 + self.puppi_met_cut]])
+        plt.savefig(create_file_dir(self.output()["netmet_puppi"].path))
+        plt.close('all')
+
+        ##################
+        # MET Efficiency #
+        ##################
+
+        eff_data, xvals = plotting.efficiency(l1MET, Y['PuppiMET_pt'],
+            self.l1_met_threshold, 10, 400)
+        netMET_eff_data = plotting.efficiency(l1NetMET, puppiMETNoMu_df_test['PuppiMET_pt'],
+            netMET_thresh, 10, 400)[0]
+        plt.axhline(0.95, linestyle='--', color='black')
+        plt.scatter(xvals, eff_data, label="L1 MET > " + str(self.l1_met_threshold))
+        plt.scatter(xvals, netMET_eff_data, label="L1 NETMET > " + str(netMET_thresh))
+        plt.legend()
+        plt.savefig(create_file_dir(self.output()["efficiency"].path))
+        plt.close('all')
+        
+
+class MLValidationWorkflow(MLTrainingWorkflow):
+    def requires(self):
+        return MLValidation.vreq(self, **self.matching_branch_data(MLValidation))

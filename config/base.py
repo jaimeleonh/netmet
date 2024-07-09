@@ -99,7 +99,7 @@ class Config(cmt_config):
     def add_default_module_files(self):
         defaults = {}
         defaults["PreprocessRDF"] = "modules"
-        defaults["PreCounter"] = "weighuserts"
+        defaults["PreCounter"] = "weights"
         return defaults
 
     def training_feature_groups(self):

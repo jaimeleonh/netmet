@@ -157,8 +157,6 @@ action() {
 
     # variables for external software
     export GLOBUS_THREAD_MODEL="none"
-    export CMT_GFAL_DIR="$CMT_SOFTWARE/gfal2"
-    export GFAL_PLUGIN_DIR="$CMT_GFAL_DIR/lib/gfal2-plugins"
 
     # certificate proxy handling
     [ "$CMT_REMOTE_JOB" != "1" ] && export X509_USER_PROXY="$CMT_BASE/x509up"
@@ -184,28 +182,6 @@ action() {
             rm -rf "$CMT_GFAL_DIR"
         fi
 
-        # setup cmssw
-        export SCRAM_ARCH="$CMT_SCRAM_ARCH"
-        source "/cvmfs/cms.cern.ch/cmsset_default.sh" ""
-        if [ ! -d "$CMT_CMSSW_BASE/$CMT_CMSSW_VERSION" ]; then
-            echo "setting up $CMT_CMSSW_VERSION at $CMT_CMSSW_BASE"
-            mkdir -p "$CMT_CMSSW_BASE"
-            cd "$CMT_CMSSW_BASE"
-            scramv1 project CMSSW "$CMT_CMSSW_VERSION"
-        fi
-        cd "$CMT_CMSSW_BASE/$CMT_CMSSW_VERSION/src"
-        
-        eval `scramv1 runtime -sh`
-
-        #export COMBINE_PATH="HiggsAnalysis/CombinedLimit"
-        #if [ ! -d "$COMBINE_PATH" ]; then
-        #    git clone https://github.com/cms-analysis/HiggsAnalysis-CombinedLimit.git $COMBINE_PATH
-        #    cd $COMBINE_PATH
-        #    git checkout v8.0.1
-        #    cd -
-        #    scram b -j5
-        #fi
-        eval `scramv1 runtime -sh`
         cd "$origin"
 
         # get the python version
@@ -223,58 +199,32 @@ action() {
         if [ ! -d "$CMT_SOFTWARE" ]; then
             echo "installing software stack at $CMT_SOFTWARE"
             mkdir -p "$CMT_SOFTWARE"
-
-            cmt_pip_install pip
-            cmt_pip_install flake8
-            cmt_pip_install luigi==2.8.13
-            cmt_pip_install tabulate
-            cmt_pip_install git+https://gitlab.cern.ch/cms-phys-ciemat/analysis_tools.git
-            cmt_pip_install git+https://gitlab.cern.ch/cms-phys-ciemat/plotting_tools.git
-            cmt_pip_install --no-deps git+https://github.com/riga/law
-            cmt_pip_install --no-deps git+https://github.com/riga/plotlib
-            cmt_pip_install --no-deps git+https://github.com/riga/LBN
-            cmt_pip_install --no-deps gast==0.5.3  # https://github.com/tensorflow/autograph/issues/1
-            cmt_pip_install sphinx==5.2.2
-            cmt_pip_install sphinx_rtd_theme
-            cmt_pip_install sphinx_design
-            cmt_pip_install envyaml
-            cmt_pip_install matplotlib==3.5.1
-            cmt_pip_install tensorflow==2.10.0
-            cmt_pip_install uproot==5.2.1
-            cmt_pip_install pandas
-            cmt_pip_install scikeras==0.12.0
-            cmt_pip_install mplhep==0.3.32
-            cmt_pip_install pyarrow==15.0.0
-            cmt_pip_install tables==3.8.0
-            cmt_pip_install fsspec-xrootd
-            cmt_pip_install xrootd
-        fi
-
-        # gfal python bindings
-        cmt_add_bin "$CMT_GFAL_DIR/bin"
-        cmt_add_py "$CMT_GFAL_DIR/lib/python3/site-packages"
-        cmt_add_lib "$CMT_GFAL_DIR/lib"
-
-        if [ ! -d "$CMT_GFAL_DIR" ]; then
-            local lcg_base="/cvmfs/grid.cern.ch/centos7-ui-4.0.3-1_umd4v3/usr"
-            if [ ! -d "$lcg_base" ]; then
-                2>&1 echo "LCG software directory $lcg_base not existing"
-                return "1"
-            fi
-
-            mkdir -p "$CMT_GFAL_DIR"
-            (
-                cd "$CMT_GFAL_DIR"
-                mkdir -p include bin lib/gfal2-plugins lib/python3/site-packages
-                ln -s "$lcg_base"/include/gfal2* include
-                ln -s "$lcg_base"/bin/gfal-* bin
-                ln -s "$lcg_base"/lib64/libgfal* lib
-                ln -s "$lcg_base"/lib64/gfal2-plugins/libgfal* lib/gfal2-plugins
-                ln -s "$lcg_base"/lib64/python3/site-packages/gfal* lib/python3/site-packages
-                cd lib/gfal2-plugins
-                rm libgfal_plugin_http.so libgfal_plugin_xrootd.so
-                curl https://cernbox.cern.ch/index.php/s/qgrogVY4bwcuCXt/download > libgfal_plugin_xrootd.so
-            )
+            cd "$CMT_SOFTWARE"
+            python3 -m venv NetMET
+            source NetMET/bin/activate
+            pip install pip --upgrade
+            pip install tabulate --no-cache-dir
+            pip install luigi --no-cache-dir
+            pip install yaml --no-cache-dir
+            pip install git+https://gitlab.cern.ch/cms-phys-ciemat/analysis_tools.git --no-cache-dir
+            pip install git+https://gitlab.cern.ch/cms-phys-ciemat/plotting_tools.git --no-cache-dir
+            pip install --no-deps git+https://github.com/riga/law --no-cache-dir
+            pip install --no-deps git+https://github.com/riga/plotlib --no-cache-dir
+            pip install matplotlib==3.5.1 --no-cache-dir
+            pip install tensorflow==2.10.0 --no-cache-dir
+            pip install uproot==5.2.1 --no-cache-dir
+            pip install pandas==1.5.0 --no-cache-dir
+            pip install scikeras==0.12.0 --no-cache-dir
+            pip install mplhep==0.3.32 --no-cache-dir
+            pip install pyarrow==15.0.0 --no-cache-dir
+            pip install tables==3.8.0 --no-cache-dir
+            pip install xrootd --no-cache-dir
+            pip install fsspec-xrootd --no-cache-dir
+            cd "$origin"
+        else
+            cd "$CMT_SOFTWARE"
+            source NetMET/bin/activate
+            cd "$origin"
         fi
     }
     export -f cmt_setup_software
