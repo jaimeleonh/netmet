@@ -10,11 +10,13 @@ action() {
     #local this_file="$( [ ! -z "$ZSH_VERSION" ] && echo "${(%):-%x}" || echo "${BASH_SOURCE[0]}" )"
     #local this_dir="$( cd "$( dirname "$this_file" )" && pwd )"
     #export CMT_BASE=$PWD
-    export CMT_BASE="/home/hep/jleonhol/netmet/nanoaod_base_analysis"
+    export CMT_BASE="/home/jleonhol/netmet/netmet/nanoaod_base_analysis"
     if [[ "$CMT_BASE" == "DUMMY" ]]; then
         echo "Need to change the path stored in CMT_BASE to the present folder"
         return "1"
     fi 
+
+    export CMT_ON_LOCAL="1"
 
     # check if this setup script is sourced by a remote job
     if [ "$CMT_ON_HTCONDOR" = "1" ]; then
@@ -42,8 +44,10 @@ action() {
         if [ "$CMT_ON_LXPLUS" = "1" ]; then
             export CMT_CERN_USER="$( whoami )"
         elif [ "$CMT_ON_IC" = "0" ]; then
-            2>&1 echo "please set CMT_CERN_USER to your CERN user name and try again"
-            return "1"
+            export CMT_ON_LOCAL="1"
+	    export CMT_LOCAL_USER="$( whoami )"
+	    #2>&1 echo "please set CMT_CERN_USER to your CERN user name and try again"
+            #return "1"
         fi
     fi
 
@@ -74,13 +78,12 @@ action() {
       [ -z "$CMT_STORE_EOS" ] && export CMT_STORE_EOS="/vols/cms/$CMT_IC_USER/cmt"
     elif [ -n "$CMT_CERN_USER" ]; then
       [ -z "$CMT_STORE_EOS" ] && export CMT_STORE_EOS="/eos/user/${CMT_CERN_USER:0:1}/$CMT_CERN_USER/cmt"
+    elif [ -n "$CMT_LOCAL_USER" ]; then
+      [ -z "$CMT_STORE_EOS" ] && export CMT_STORE_EOS="/home/${CMT_LOCAL_USER}/netmet/cmt"
     fi
     [ -z "$CMT_STORE" ] && export CMT_STORE="$CMT_STORE_EOS"
     [ -z "$CMT_JOB_DIR" ] && export CMT_JOB_DIR="$CMT_DATA/jobs"
     [ -z "$CMT_TMP_DIR" ] && export CMT_TMP_DIR="$CMT_DATA/tmp"
-    [ -z "$CMT_CMSSW_BASE" ] && export CMT_CMSSW_BASE="$CMT_DATA/cmssw"
-    [ -z "$CMT_SCRAM_ARCH" ] && export CMT_SCRAM_ARCH="el9_amd64_gcc11"
-    [ -z "$CMT_CMSSW_VERSION" ] && export CMT_CMSSW_VERSION="CMSSW_13_0_13"
     [ -z "$CMT_PYTHON_VERSION" ] && export CMT_PYTHON_VERSION="3"
 
     # specific eos dirs
@@ -165,12 +168,6 @@ action() {
     cmt_setup_software() {
         local origin="$( pwd )"
         local mode="$1"
-
-        # remove software directories when forced
-        if [ "$mode" = "force" ] || [ "$mode" = "force_cmssw" ]; then
-            echo "remove CMSSW checkout in $CMT_CMSSW_BASE/$CMT_CMSSW_VERSION"
-            rm -rf "$CMT_CMSSW_BASE/$CMT_CMSSW_VERSION"
-        fi
 
         if [ "$mode" = "force" ] || [ "$mode" = "force_py" ]; then
             echo "remove software stack in $CMT_SOFTWARE"

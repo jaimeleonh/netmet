@@ -217,7 +217,7 @@ class MLTraining(MLTrainingTask):
         branches = tools.getBranches(inputs, useEmu, useMP)
 
         dataset_files = dataset.get_files(
-            os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)[0:50]
+            os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)[0:10]
         data = tools.getArrays(dataset_files, branches, len(dataset_files), None)
         collections = tools.getCollections(data, inputSums, inputs)
         df = tools.makeDataframe(collections, None, nObj, keepStruct)
