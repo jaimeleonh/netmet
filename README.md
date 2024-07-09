@@ -18,7 +18,7 @@ law run MLTraining --config-name base --version test
 
 Several parameters can be included, see `law run MLTraining --help`.
 
-Launching to htcondor is possible via `law run MLTrainingWorkflow`. Trainings will consider the parameters stored under [config/hyperopt.yaml](https://github.com/jaimeleonh/netmet/blob/main/config/hyperopt.yaml). In case only selected trainings want to be trained, one can add to the previous command `--branches 0,1,3-5`, where the branch numbers are set in [config/hyperopt.yaml, L30](https://github.com/jaimeleonh/netmet/blob/main/config/hyperopt.yaml#L30).
+Launching to htcondor is possible via `law run MLTrainingWorkflow`. In this case, trainings will consider the parameters stored under [config/hyperopt.yaml](https://github.com/jaimeleonh/netmet/blob/main/config/hyperopt.yaml). In case only selected trainings want to be trained, one can add to the previous command `--branches 0,1,3-5`, where the branch numbers are set in [config/hyperopt.yaml, L30](https://github.com/jaimeleonh/netmet/blob/main/config/hyperopt.yaml#L30).
 
 ### Validation plots
 ```
