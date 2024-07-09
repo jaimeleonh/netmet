@@ -252,7 +252,7 @@ class MLTraining(MLTrainingTask):
             model.save(create_file_dir(self.output().path))
 
 
-class MLTrainingWorkflowBase(Task, law.LocalWorkflow, HTCondorWorkflow, SGEWorkflow, SlurmWorkflow):
+class MLTrainingWorkflowBase(ConfigTask, law.LocalWorkflow, HTCondorWorkflow, SGEWorkflow, SlurmWorkflow):
     training_workflow_file = MLTrainingTask.training_workflow_file
     output_collection_cls = law.FileCollection
 
