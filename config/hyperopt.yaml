@@ -30,7 +30,8 @@ training_workflow:
   branches:
     0: {}
     1: {random_seed: 2}
-    #2: {random_seed: 3}
+    2: {architecture: 128_128:relu}
+    3: {ref: 2, epochs: 100}
     #3: {event_weights: False}
     #4: {batch_norm: False}
     #5: {feature_tag: lbn}

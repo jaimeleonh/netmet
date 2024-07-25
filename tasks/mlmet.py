@@ -217,7 +217,8 @@ class MLTraining(MLTrainingTask):
         branches = tools.getBranches(inputs, useEmu, useMP)
 
         dataset_files = dataset.get_files(
-            os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)[0:10]
+            # os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)[0:50]
+            os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)[0:2]
         data = tools.getArrays(dataset_files, branches, len(dataset_files), None)
         collections = tools.getCollections(data, inputSums, inputs)
         df = tools.makeDataframe(collections, None, nObj, keepStruct)
@@ -318,7 +319,9 @@ class MLValidation(MLTraining):
             "resolution": self.local_target("resolution_comparison.pdf"),
             "dist": self.local_target("distributions.pdf"),
             "netmet_met": self.local_target(f"l1netmet_vs_l1met__puppimet_{self.puppi_met_cut}.pdf"),
+            "netmet_met_log": self.local_target(f"l1netmet_vs_l1met__puppimet_{self.puppi_met_cut}_log.pdf"),
             "netmet_puppi": self.local_target(f"l1netmet_vs_puppimet__puppimet_{self.puppi_met_cut}.pdf"),
+            "netmet_puppi_log": self.local_target(f"l1netmet_vs_puppimet__puppimet_{self.puppi_met_cut}_log.pdf"),
             "efficiency": self.local_target("efficiency.pdf"),
         }
 
@@ -327,6 +330,7 @@ class MLValidation(MLTraining):
         from sklearn.preprocessing import StandardScaler
         import tensorflow as tf
         from matplotlib import pyplot as plt
+        from matplotlib.colors import LogNorm
         import keras
 
         feature_params = self.config.training_feature_groups()[self.feature_tag]
@@ -403,17 +407,44 @@ class MLValidation(MLTraining):
         plt.close('all')
 
         import awkward as ak
-        plt.hist2d(ak.to_numpy(ak.flatten(Yp)), l1MET_test, bins=[50, 50],
+        img = plt.hist2d(ak.to_numpy(ak.flatten(Yp)), l1MET_test, bins=[50, 50],
             range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
                 [self.puppi_met_cut, 200 + self.puppi_met_cut]])
+        cbar = fig.colorbar(img)
+        ax.set_xlabel('L1 NET MET [GeV]')
+        ax.set_ylabel('L1 MET [GeV]')
         plt.savefig(create_file_dir(self.output()["netmet_met"].path))
+        plt.close('all')
+
+        img = plt.hist2d(ak.to_numpy(ak.flatten(Yp)), l1MET_test, bins=[50, 50],
+            range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
+                [self.puppi_met_cut, 200 + self.puppi_met_cut]],
+            norm=LogNorm()
+        )
+        cbar = fig.colorbar(img)
+        ax.set_xlabel('L1 NET MET [GeV]')
+        ax.set_ylabel('L1 MET [GeV]')
+        plt.savefig(create_file_dir(self.output()["netmet_met_log"].path))
         plt.close('all')
 
         plt.hist2d(ak.to_numpy(ak.flatten(Yp)), ak.to_numpy(puppiMETNoMu_df_test['PuppiMET_pt']),
             bins=[50, 50],
             range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
                 [self.puppi_met_cut, 200 + self.puppi_met_cut]])
+        ax.set_xlabel('L1 NET MET [GeV]')
+        ax.set_ylabel('PUPPI MET No Mu [GeV]')
         plt.savefig(create_file_dir(self.output()["netmet_puppi"].path))
+        plt.close('all')
+
+        plt.hist2d(ak.to_numpy(ak.flatten(Yp)), ak.to_numpy(puppiMETNoMu_df_test['PuppiMET_pt']),
+            bins=[50, 50],
+            range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
+                [self.puppi_met_cut, 200 + self.puppi_met_cut]],
+            norm=LogNorm()
+        )
+        ax.set_xlabel('L1 NET MET [GeV]')
+        ax.set_ylabel('PUPPI MET No Mu [GeV]')
+        plt.savefig(create_file_dir(self.output()["netmet_puppi_log"].path))
         plt.close('all')
 
         ##################
