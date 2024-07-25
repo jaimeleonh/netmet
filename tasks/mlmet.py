@@ -407,41 +407,51 @@ class MLValidation(MLTraining):
         plt.close('all')
 
         import awkward as ak
+        fig = plt.figure()
+        ax = plt.subplot()
         img = plt.hist2d(ak.to_numpy(ak.flatten(Yp)), l1MET_test, bins=[50, 50],
             range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
                 [self.puppi_met_cut, 200 + self.puppi_met_cut]])
-        cbar = fig.colorbar(img)
+        cbar = fig.colorbar(img[3])
         ax.set_xlabel('L1 NET MET [GeV]')
         ax.set_ylabel('L1 MET [GeV]')
         plt.savefig(create_file_dir(self.output()["netmet_met"].path))
         plt.close('all')
 
+        fig = plt.figure()
+        ax = plt.subplot()
         img = plt.hist2d(ak.to_numpy(ak.flatten(Yp)), l1MET_test, bins=[50, 50],
             range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
                 [self.puppi_met_cut, 200 + self.puppi_met_cut]],
             norm=LogNorm()
         )
-        cbar = fig.colorbar(img)
+        cbar = fig.colorbar(img[3])
         ax.set_xlabel('L1 NET MET [GeV]')
         ax.set_ylabel('L1 MET [GeV]')
         plt.savefig(create_file_dir(self.output()["netmet_met_log"].path))
         plt.close('all')
 
+        fig = plt.figure()
+        ax = plt.subplot()
         plt.hist2d(ak.to_numpy(ak.flatten(Yp)), ak.to_numpy(puppiMETNoMu_df_test['PuppiMET_pt']),
             bins=[50, 50],
             range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
                 [self.puppi_met_cut, 200 + self.puppi_met_cut]])
+        cbar = fig.colorbar(img[3])
         ax.set_xlabel('L1 NET MET [GeV]')
         ax.set_ylabel('PUPPI MET No Mu [GeV]')
         plt.savefig(create_file_dir(self.output()["netmet_puppi"].path))
         plt.close('all')
 
+        fig = plt.figure()
+        ax = plt.subplot()
         plt.hist2d(ak.to_numpy(ak.flatten(Yp)), ak.to_numpy(puppiMETNoMu_df_test['PuppiMET_pt']),
             bins=[50, 50],
             range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
                 [self.puppi_met_cut, 200 + self.puppi_met_cut]],
             norm=LogNorm()
         )
+        cbar = fig.colorbar(img[3])
         ax.set_xlabel('L1 NET MET [GeV]')
         ax.set_ylabel('PUPPI MET No Mu [GeV]')
         plt.savefig(create_file_dir(self.output()["netmet_puppi_log"].path))
