@@ -28,3 +28,6 @@ law run MLValidation --config-name base --version test
 Several parameters can be included, see `law run MLValidation --help`. These parameters will be also used when training.
 
 Similarly, launching to htcondor is possible via `law run MLValidationWorkflow`.
+
+
+**Really important:** If running on htcondor w/o GPUs at IC, need to add to the command `--custom-condor-tag requirements=has_avx`.
