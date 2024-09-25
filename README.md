@@ -27,7 +27,7 @@ law run MLValidation --config-name base --version test
 
 Several parameters can be included, see `law run MLValidation --help`. These parameters will be also used when training.
 
-Similarly, launching to htcondor is possible via `law run MLValidationWorkflow`.
+Similarly, launching to htcondor is possible via `law run MLValidationWorkflow`. In this case, increasing the memory available can be done by including `--request-cpus N`.
 
 
 **Really important:** If running on htcondor w/o GPUs at IC, need to add to the command `--custom-condor-tag requirements=has_avx`.
