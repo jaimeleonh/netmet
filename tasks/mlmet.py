@@ -173,13 +173,16 @@ class MLTraining(MLTrainingTask):
         # I don't really need it, it's just a placeholder
 
     def output(self):
-        return self.local_target("model.h5")
+        return {
+            "model": self.local_target("model.h5"),
+            "loss": self.local_target("loss.pdf")
+        }
 
     def generate_model(self, X_train):
         from keras.models import Sequential
         from keras.layers import Dense, Dropout, Normalization
         from keras.optimizers import Adam
-        
+
         model = Sequential()
         if self.batch_norm:
             normalizer = Normalization(input_shape=[X_train.shape[1],], axis=-1)
@@ -200,7 +203,7 @@ class MLTraining(MLTrainingTask):
 
         return model
 
-    def get_data(self, dataset=None, output_y=True, output_df=False):
+    def get_data(self, dataset=None, output_y=True, output_df=False, nfiles=-1, min_puppi_pt=-1):
         import utils.tools as tools
 
         if not dataset:
@@ -216,30 +219,39 @@ class MLTraining(MLTrainingTask):
 
         branches = tools.getBranches(inputs, useEmu, useMP)
 
-        dataset_files = dataset.get_files(
-            # os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)[0:50]
-            os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)[0:2]
+        if nfiles != -1:
+            dataset_files = dataset.get_files(
+                os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)[0:nfiles]
+        else:
+            dataset_files = dataset.get_files(
+                os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)
+            # os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)[0:2]
         data = tools.getArrays(dataset_files, branches, len(dataset_files), None)
-        collections = tools.getCollections(data, inputSums, inputs)
-        df = tools.makeDataframe(collections, None, nObj, keepStruct)
 
-        # get puppiMETs
         if output_y:
             puppiMET, puppiMET_noMu = tools.getPUPPIMET(data)
+            if min_puppi_pt > -1:
+                data, puppiMET_noMu = tools.apply_pt_cut(data, puppiMET_noMu, min_puppi_pt)
             puppiMETNoMu_df = tools.arrayToDataframe(puppiMET_noMu, 'puppiMET_noMu', None)
+            collections = tools.getCollections(data, inputSums, inputs)
+            df = tools.makeDataframe(collections, None, nObj, keepStruct)
             return df.copy(), puppiMETNoMu_df.copy()
         else:
+            collections = tools.getCollections(data, inputSums, inputs)
+            df = tools.makeDataframe(collections, None, nObj, keepStruct)
             return df.copy(), None
 
     def run(self):
         from sklearn.preprocessing import StandardScaler
         import tensorflow as tf
+        from matplotlib import pyplot as plt
 
         feature_params = self.config.training_feature_groups()[self.feature_tag]
         scaleData = feature_params.get("scaleData", False)
         trainFrac = feature_params.get("trainFrac", 0.5)
+        min_puppi_pt = feature_params.get("min_puppi_pt", -1)
 
-        X, Y = self.get_data()
+        X, Y = self.get_data(nfiles=-1, min_puppi_pt=min_puppi_pt)
 
         scaler = StandardScaler()
         if scaleData:
@@ -249,8 +261,17 @@ class MLTraining(MLTrainingTask):
 
         with tf.device(self.device):
             model = self.generate_model(X_train)
-            model.fit(X_train, Y_train, epochs=self.epochs, batch_size=self.batch_size, verbose=1)
-            model.save(create_file_dir(self.output().path))
+            history = model.fit(X_train, Y_train, epochs=self.epochs, batch_size=self.batch_size,
+                validation_split=0.3, verbose=1)
+            model.save(create_file_dir(self.output()["model"].path))
+
+            # loss plotting
+            plt.plot(history.history['loss'], label="Training loss")
+            plt.plot(history.history['val_loss'], label="Validation loss")
+            plt.ylabel('Loss')
+            plt.xlabel('Epoch')
+            plt.legend()
+            plt.savefig(create_file_dir(self.output()["loss"].path))
 
 
 class MLTrainingWorkflowBase(ConfigTask, law.LocalWorkflow, HTCondorWorkflow, SGEWorkflow, SlurmWorkflow):
@@ -262,7 +283,7 @@ class MLTrainingWorkflowBase(ConfigTask, law.LocalWorkflow, HTCondorWorkflow, SG
 
         self.workflow_data, self._file_branch_map = parse_workflow_file(
             self.retrieve_file(f"config/{self.training_workflow_file}.yaml"))
-        
+
     def create_branch_map(self):
         return self._file_branch_map
 
@@ -298,20 +319,7 @@ class MLTrainingWorkflow(MLTrainingWorkflowBase):
         pass
 
 
-class MLValidation(MLTraining):
-    background_dataset_name = luigi.Parameter(default="background", description="name of the "
-        "background dataset, default: background")
-    l1_met_threshold = luigi.IntParameter(default=50, description="value of the MET threshold, "
-        "default: 50")
-    puppi_met_cut = luigi.IntParameter(default=0, description="minimum cut on the PuppiMET value, "
-        "default: 0")
-
-    def __init__(self, *args, **kwargs):
-        super(MLValidation, self).__init__(*args, **kwargs)
-        self.background_dataset = self.config.datasets.get(self.background_dataset_name)
-
-    def requires(self):
-        return MLTraining.vreq(self)
+class BaseValidationTask():
 
     def output(self):
         return {
@@ -325,39 +333,10 @@ class MLValidation(MLTraining):
             "efficiency": self.local_target("efficiency.pdf"),
         }
 
-    def run(self):
+    def get_performance_plots(self, X, Y, X_train, Y_train, Xp, Yp, Xp_bkg, Yp_bkg):
         import utils.plotting as plotting
-        from sklearn.preprocessing import StandardScaler
-        import tensorflow as tf
         from matplotlib import pyplot as plt
-        from matplotlib.colors import LogNorm
-        import keras
-
-        feature_params = self.config.training_feature_groups()[self.feature_tag]
-        scaleData = feature_params.get("scaleData", False)
-        trainFrac = feature_params.get("trainFrac", 0.5)
-
-        X, Y = self.get_data()
-
-        scaler = StandardScaler()
-        if scaleData:
-            X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
-        X_train = X.sample(frac=trainFrac, random_state=3).dropna()
-        Y_train = Y.loc[X_train.index]
-
-        # predict values for efficiency
-        modelFile = self.input().path
-        Xp = X.drop(X_train.index)
-        with tf.device(self.device):
-            model = keras.models.load_model(modelFile)
-            Yp = model.predict(Xp)
-
-        Xp_bkg, _ = self.get_data(self.background_dataset, output_y=False)
-        if scaleData:
-            Xp_bkg[Xp_bkg.columns] = pd.DataFrame(scaler.fit_transform(Xp_bkg))
-        with tf.device(self.device):
-            model = keras.models.load_model(modelFile)
-            Yp_bkg = model.predict(Xp_bkg)
+        from matplotlib.colors import LogNorm, NoNorm
 
         ##################################
         # L1 MET rate vs L1 NET MET rate #
@@ -401,7 +380,7 @@ class MLValidation(MLTraining):
 
         plt.hist(puppiMETNoMu_df_test['PuppiMET_pt'], bins=100, range=[0, 200], histtype='step', log=True, label="PUPPI MET NoMu")
         plt.hist(l1MET_test, bins=100, range=[0, 200], histtype='step', label="L1MET")
-        plt.hist(l1NetMET, bins=100, range=[0, 200], histtype='step', label="L1 Net MET ")  
+        plt.hist(l1NetMET, bins=100, range=[0, 200], histtype='step', label="L1 Net MET ")
         plt.legend(fontsize=16)
         plt.savefig(create_file_dir(self.output()["dist"].path))
         plt.close('all')
@@ -409,7 +388,13 @@ class MLValidation(MLTraining):
         import awkward as ak
         fig = plt.figure()
         ax = plt.subplot()
-        img = plt.hist2d(ak.to_numpy(ak.flatten(Yp)), l1MET_test, bins=[50, 50],
+
+        try:
+            Yp_flat = ak.flatten(Yp)
+        except:
+            Yp_flat = Yp
+
+        img = plt.hist2d(ak.to_numpy(Yp_flat), l1MET_test, bins=[50, 50],
             range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
                 [self.puppi_met_cut, 200 + self.puppi_met_cut]])
         cbar = fig.colorbar(img[3])
@@ -420,7 +405,7 @@ class MLValidation(MLTraining):
 
         fig = plt.figure()
         ax = plt.subplot()
-        img = plt.hist2d(ak.to_numpy(ak.flatten(Yp)), l1MET_test, bins=[50, 50],
+        img = plt.hist2d(ak.to_numpy(Yp_flat), l1MET_test, bins=[50, 50],
             range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
                 [self.puppi_met_cut, 200 + self.puppi_met_cut]],
             norm=LogNorm()
@@ -433,7 +418,7 @@ class MLValidation(MLTraining):
 
         fig = plt.figure()
         ax = plt.subplot()
-        plt.hist2d(ak.to_numpy(ak.flatten(Yp)), ak.to_numpy(puppiMETNoMu_df_test['PuppiMET_pt']),
+        plt.hist2d(ak.to_numpy(Yp_flat), ak.to_numpy(puppiMETNoMu_df_test['PuppiMET_pt']),
             bins=[50, 50],
             range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
                 [self.puppi_met_cut, 200 + self.puppi_met_cut]])
@@ -445,7 +430,7 @@ class MLValidation(MLTraining):
 
         fig = plt.figure()
         ax = plt.subplot()
-        plt.hist2d(ak.to_numpy(ak.flatten(Yp)), ak.to_numpy(puppiMETNoMu_df_test['PuppiMET_pt']),
+        plt.hist2d(ak.to_numpy(Yp_flat), ak.to_numpy(puppiMETNoMu_df_test['PuppiMET_pt']),
             bins=[50, 50],
             range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
                 [self.puppi_met_cut, 200 + self.puppi_met_cut]],
@@ -461,18 +446,293 @@ class MLValidation(MLTraining):
         # MET Efficiency #
         ##################
 
-        eff_data, xvals = plotting.efficiency(l1MET, Y['PuppiMET_pt'],
+        fig = plt.figure()
+        ax = plt.subplot()
+        eff_data, xvals, eff_errors = plotting.efficiency(l1MET, Y['PuppiMET_pt'],
             self.l1_met_threshold, 10, 400)
-        netMET_eff_data = plotting.efficiency(l1NetMET, puppiMETNoMu_df_test['PuppiMET_pt'],
-            netMET_thresh, 10, 400)[0]
+        netMET_eff_data, _, netMET_eff_errors = plotting.efficiency(l1NetMET,
+            puppiMETNoMu_df_test['PuppiMET_pt'],
+            netMET_thresh, 10, 400)
         plt.axhline(0.95, linestyle='--', color='black')
-        plt.scatter(xvals, eff_data, label="L1 MET > " + str(self.l1_met_threshold))
-        plt.scatter(xvals, netMET_eff_data, label="L1 NETMET > " + str(netMET_thresh))
+        plt.errorbar(xvals, eff_data, eff_errors, label="L1 MET > " + str(self.l1_met_threshold),
+            marker='o', capsize=7, linestyle='none')
+        plt.errorbar(xvals, netMET_eff_data, netMET_eff_errors, label="L1 NETMET > " + str(netMET_thresh),
+            marker='o', capsize=7, linestyle='none')
+        ax.set_xlabel('PUPPI MET No Mu [GeV]')
+        ax.set_ylabel('Efficiency')
         plt.legend()
         plt.savefig(create_file_dir(self.output()["efficiency"].path))
         plt.close('all')
-        
+
+
+class MLValidation(BaseValidationTask, MLTraining):
+    background_dataset_name = luigi.Parameter(default="background", description="name of the "
+        "background dataset, default: background")
+    l1_met_threshold = luigi.IntParameter(default=50, description="value of the MET threshold, "
+        "default: 50")
+    puppi_met_cut = luigi.IntParameter(default=0, description="minimum cut on the PuppiMET value, "
+        "default: 0")
+
+    def __init__(self, *args, **kwargs):
+        super(MLValidation, self).__init__(*args, **kwargs)
+        self.background_dataset = self.config.datasets.get(self.background_dataset_name)
+
+    def requires(self):
+        return MLTraining.vreq(self)
+
+    def run(self):
+        import utils.plotting as plotting
+        from sklearn.preprocessing import StandardScaler
+        import tensorflow as tf
+        from matplotlib import pyplot as plt
+        from matplotlib.colors import LogNorm, NoNorm
+        import keras
+
+        feature_params = self.config.training_feature_groups()[self.feature_tag]
+        scaleData = feature_params.get("scaleData", False)
+        trainFrac = feature_params.get("trainFrac", 0.5)
+
+        X, Y = self.get_data(nfiles=200)
+
+        scaler = StandardScaler()
+        if scaleData:
+            X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
+        X_train = X.sample(frac=trainFrac, random_state=3).dropna()
+        Y_train = Y.loc[X_train.index]
+
+        # predict values for efficiency
+        modelFile = self.input()["model"].path
+        Xp = X.drop(X_train.index)
+        with tf.device(self.device):
+            model = keras.models.load_model(modelFile)
+            Yp = model.predict(Xp)
+
+        Xp_bkg, _ = self.get_data(self.background_dataset, nfiles=50, output_y=False)
+        if scaleData:
+            Xp_bkg[Xp_bkg.columns] = pd.DataFrame(scaler.fit_transform(Xp_bkg))
+        with tf.device(self.device):
+            model = keras.models.load_model(modelFile)
+            Yp_bkg = model.predict(Xp_bkg)
+
+        self.get_performance_plots(X, Y, X_train, Y_train, Xp, Yp, Xp_bkg, Yp_bkg)
+
 
 class MLValidationWorkflow(MLTrainingWorkflow):
     def requires(self):
         return MLValidation.vreq(self, **self.matching_branch_data(MLValidation))
+
+
+class BDTTrainingTask(ConfigTask):
+    # training_config_name = luigi.Parameter(default="default", description="the name of the "
+        # "training configuration, default: default")
+    # training_category_name = luigi.Parameter(default="baseline_os_odd", description="the name of "
+        # "a category whose selection rules are applied to data to train on, default: "
+        # "baseline_os_odd")
+    feature_tag = luigi.Parameter(default="default", description="the tag of features to use for "
+        "the training, default: default")
+    n_estimators = luigi.IntParameter(default=10, description="an integer "
+        "describing the number of estimators, default: 10")
+    objective = luigi.Parameter(default="reg:linear", description="the name of "
+        "the loss function, default: neg_mean_absolute_error")
+    random_seed = luigi.IntParameter(default=1, description="random seed for weight "
+        "initialization, 0 means non-deterministic, default: 1")
+    signal_dataset_name = luigi.Parameter(default="signal", description="name of the signal dataset, "
+        "default: signal")
+
+    training_id = luigi.IntParameter(default=law.NO_INT, description="when given, overwrite "
+        "training parameters from the training with this branch in the training_workflow_file, "
+        "default: empty")
+    training_workflow_file = luigi.Parameter(description="filename with training parameters",
+        default="hyperopt_bdt")
+    use_gpu = luigi.BoolParameter(default=False, significant=False, description="whether to launch "
+        "jobs to a gpu, default: False")
+
+    training_hash_params = [
+        "feature_tag", "n_estimators", "objective", "random_seed", "signal_dataset_name",
+        # "training_category_name", "training_config_name", "l2_norm", "event_weights",
+    ]
+
+    @classmethod
+    def modify_param_values(cls, params):
+        if "training_workflow_file" not in params or "training_id" not in params:
+            return params
+        if params["training_id"] == law.NO_INT:
+            return params
+
+        branch_map = parse_workflow_file(
+            self.retrieve_file(f"config/{self.training_workflow_file}.yaml"))[1]
+
+        param_names = cls.get_param_names()
+        for name, value in branch_map[params["training_id"]].items():
+            if name in param_names:
+                params[name] = value
+
+        params["training_id"] = law.NO_INT
+
+        return params
+
+    @classmethod
+    def create_training_hash(cls, **kwargs):
+        def fmt(key, prefix, fn):
+            if key not in kwargs:
+                return None
+            value = fn(kwargs[key])
+            if value in ("", None):
+                return None
+            return prefix + "_" + str(value)
+        def num(n, tmpl="{}", skip_empty=False):
+            if skip_empty and n in (law.NO_INT, law.NO_FLOAT):
+                return None
+            else:
+                return tmpl.format(n).replace(".", "p")
+        parts = [
+            #fmt("training_category_name", "TC", str),
+            fmt("feature_tag", "FT", lambda v: v.replace("*", "X").replace("?", "Y")),
+            fmt("n_estimators", "N", int),
+            fmt("objective", "OBJ", lambda v: v.replace(":", "_")),
+            fmt("random_seed", "RS", int),
+            fmt("signal_dataset_name", "SIG", str),
+        ]
+        return "__".join(part for part in parts if part)
+
+    def __init__(self, *args, **kwargs):
+        super(BDTTrainingTask, self).__init__(*args, **kwargs)
+
+        # store the training config
+        # self.training_config = self.config.training[self.training_config_name]
+
+        # store the category and check for compositeness
+        # self.training_category = self.config.categories.get(self.training_category_name)
+        # if self.training_category.x("composite", False) and \
+                # not self.allow_composite_training_category:
+            # raise Exception("training category '{}' is composite, prohibited by task {}".format(
+                # self.training_category.name, self))
+
+        # save training features, without minimum feature score filtering applied
+        self.training_features = [
+            feature for feature in self.config.features
+            if feature.has_tag(self.feature_tag)
+        ]
+
+        # compute the storage hash
+        # print(self.get_training_hash_data())
+        self.training_hash = self.create_training_hash(**self.get_training_hash_data())
+
+    def get_training_hash_data(self):
+        return {p: getattr(self, p) for p in self.training_hash_params}
+
+    def store_parts(self):
+        parts = super(BDTTrainingTask, self).store_parts()
+        parts["training_hash"] = self.training_hash
+        return parts
+
+
+class BDTTraining(BDTTrainingTask):
+    def __init__(self, *args, **kwargs):
+        super(BDTTraining, self).__init__(*args, **kwargs)
+        self.signal_dataset = self.config.datasets.get(self.signal_dataset_name)
+        # self.device = "GPU: 0" if self.use_gpu else "CPU: 0"
+
+    def requires(self):
+        return InputData.req(self, dataset_name=self.signal_dataset_name, file_index=0)
+        # I don't really need it, it's just a placeholder
+
+    def output(self):
+        return {
+            "model": self.local_target("model.json"),
+        }
+
+    def generate_model(self):
+        import xgboost
+        return xgboost.XGBRegressor(objective=self.objective, n_estimators=self.n_estimators,
+            seed=self.random_seed)
+
+    def run(self):
+        from sklearn.preprocessing import StandardScaler
+
+        feature_params = self.config.training_feature_groups()[self.feature_tag]
+        trainFrac = feature_params.get("trainFrac", 0.5)
+        scaleData = feature_params.get("scaleData", False)
+        min_puppi_pt = feature_params.get("min_puppi_pt", -1)
+
+        X, Y = MLTraining.get_data(self, nfiles=-1, min_puppi_pt=min_puppi_pt)
+        # X, Y = MLTraining.get_data(self, nfiles=2)
+
+        scaler = StandardScaler()
+        if scaleData:
+            X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
+        X_train = X.sample(frac=trainFrac, random_state=3).dropna()
+        Y_train = Y.loc[X_train.index]
+
+        model = self.generate_model()
+        history = model.fit(X_train, Y_train)
+        model.save_model(create_file_dir(self.output()["model"].path))
+
+
+class BDTTrainingWorkflowBase(MLTrainingWorkflowBase):
+    training_workflow_file = BDTTrainingTask.training_workflow_file
+
+
+class BDTTrainingWorkflow(BDTTrainingWorkflowBase):
+    def requires(self):
+        return BDTTraining.vreq(self, **self.matching_branch_data(BDTTraining))
+
+    def output(self):
+        return self.requires().output()
+
+    def run(self):
+        pass
+
+
+class BDTValidation(BaseValidationTask, BDTTraining):
+    background_dataset_name = luigi.Parameter(default="background", description="name of the "
+        "background dataset, default: background")
+    l1_met_threshold = luigi.IntParameter(default=50, description="value of the MET threshold, "
+        "default: 50")
+    puppi_met_cut = luigi.IntParameter(default=0, description="minimum cut on the PuppiMET value, "
+        "default: 0")
+
+    def __init__(self, *args, **kwargs):
+        super(BDTValidation, self).__init__(*args, **kwargs)
+        self.background_dataset = self.config.datasets.get(self.background_dataset_name)
+
+    def requires(self):
+        return BDTTraining.vreq(self)
+
+    def run(self):
+        from sklearn.preprocessing import StandardScaler
+        import xgboost
+
+        feature_params = self.config.training_feature_groups()[self.feature_tag]
+        scaleData = feature_params.get("scaleData", False)
+        trainFrac = feature_params.get("trainFrac", 0.5)
+
+        X, Y = MLTraining.get_data(self, nfiles=200)
+
+        scaler = StandardScaler()
+        if scaleData:
+            X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
+        X_train = X.sample(frac=trainFrac, random_state=3).dropna()
+        Y_train = Y.loc[X_train.index]
+
+        # predict values for efficiency
+        modelFile = self.input()["model"].path
+        Xp = X.drop(X_train.index)
+
+        model = xgboost.XGBRegressor()
+        model.load_model(modelFile)
+
+        Yp = model.predict(Xp)
+
+        Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=50)
+        if scaleData:
+            Xp_bkg[Xp_bkg.columns] = pd.DataFrame(scaler.fit_transform(Xp_bkg))
+
+        Yp_bkg = model.predict(Xp_bkg)
+
+        self.get_performance_plots(X, Y, X_train, Y_train, Xp, Yp, Xp_bkg, Yp_bkg)
+
+
+class BDTValidationWorkflow(BDTTrainingWorkflow):
+    def requires(self):
+        return BDTValidation.vreq(self, **self.matching_branch_data(BDTValidation))

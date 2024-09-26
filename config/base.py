@@ -108,6 +108,11 @@ class Config(cmt_config):
                 "inputs": ["Jet"],
                 "inputSums": ["methf", "ntt"],
                 "nObj": 4
+            },
+            "eg": {
+                "inputs": ["Jet", "EG"],
+                "inputSums": ["methf", "ntt"],
+                "nObj": 4
             }
         }
 

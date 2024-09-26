@@ -32,6 +32,9 @@ training_workflow:
     1: {random_seed: 2}
     2: {architecture: 128_128:relu}
     3: {ref: 2, epochs: 100}
+    4: {ref: 2, epochs: 40}
+    5: {architecture: 32_32_32:relu, epochs: 50}
+    6: {architecture: 32_32:relu, epochs: 50}
     #3: {event_weights: False}
     #4: {batch_norm: False}
     #5: {feature_tag: lbn}
