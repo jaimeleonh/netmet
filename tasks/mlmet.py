@@ -15,6 +15,8 @@ import os
 import sys
 from subprocess import call
 import json
+import numpy as np
+import pandas as pd
 
 import law
 import luigi
@@ -175,7 +177,8 @@ class MLTraining(MLTrainingTask):
     def output(self):
         return {
             "model": self.local_target("model.h5"),
-            "loss": self.local_target("loss.pdf")
+            "loss": self.local_target("loss.pdf"),
+            "acc": self.local_target("accuracy.pdf")
         }
 
     def generate_model(self, X_train):
@@ -199,7 +202,9 @@ class MLTraining(MLTrainingTask):
         model.add(Dense(1))
         model.compile(
             loss=self.loss_name,
-            optimizer=Adam(learning_rate=self.learning_rate))
+            optimizer=Adam(learning_rate=self.learning_rate),
+            metrics=['mean_squared_error']
+        )
 
         return model
 
@@ -251,7 +256,8 @@ class MLTraining(MLTrainingTask):
         trainFrac = feature_params.get("trainFrac", 0.5)
         min_puppi_pt = feature_params.get("min_puppi_pt", -1)
 
-        X, Y = self.get_data(nfiles=-1, min_puppi_pt=min_puppi_pt)
+        # X, Y = self.get_data(nfiles=-1, min_puppi_pt=min_puppi_pt)
+        X, Y = self.get_data(nfiles=2, min_puppi_pt=min_puppi_pt)
 
         scaler = StandardScaler()
         if scaleData:
@@ -261,6 +267,9 @@ class MLTraining(MLTrainingTask):
 
         with tf.device(self.device):
             model = self.generate_model(X_train)
+            print(model.summary())
+            import sys
+            sys.exit()
             history = model.fit(X_train, Y_train, epochs=self.epochs, batch_size=self.batch_size,
                 validation_split=0.3, verbose=1)
             model.save(create_file_dir(self.output()["model"].path))
@@ -272,6 +281,16 @@ class MLTraining(MLTrainingTask):
             plt.xlabel('Epoch')
             plt.legend()
             plt.savefig(create_file_dir(self.output()["loss"].path))
+            plt.close()
+            
+            # acc plotting
+            plt.plot(history.history['mean_squared_error'], label="Training accuracy")
+            plt.plot(history.history['val_mean_squared_error'], label="Validation accuracy")
+            plt.ylabel('Accuracy')
+            plt.xlabel('Epoch')
+            plt.legend()
+            plt.savefig(create_file_dir(self.output()["acc"].path))
+
 
 
 class MLTrainingWorkflowBase(ConfigTask, law.LocalWorkflow, HTCondorWorkflow, SGEWorkflow, SlurmWorkflow):
@@ -736,3 +755,72 @@ class BDTValidation(BaseValidationTask, BDTTraining):
 class BDTValidationWorkflow(BDTTrainingWorkflow):
     def requires(self):
         return BDTValidation.vreq(self, **self.matching_branch_data(BDTValidation))
+
+
+# BDT Quality
+
+class BDTQualityTraining(BDTTraining):
+
+    def generate_model(self):
+        import xgboost
+        return xgboost.XGBClassifier(objective=self.objective, n_estimators=self.n_estimators,
+            seed=self.random_seed)
+
+    def run(self):
+        from sklearn.preprocessing import StandardScaler
+
+        feature_params = self.config.training_feature_groups()[self.feature_tag]
+        trainFrac = feature_params.get("trainFrac", 0.5)
+        scaleData = feature_params.get("scaleData", False)
+        min_puppi_pt = feature_params.get("min_puppi_pt", -1)
+
+        # X, Y = MLTraining.get_data(self, nfiles=-1, min_puppi_pt=min_puppi_pt)
+        X, Y = MLTraining.get_data(self, nfiles=5)
+
+        qual = []
+        for l1met, pupmet in zip(X['methf_0_pt'], Y["PuppiMET_pt"]):
+            if pupmet - l1met < 20:
+                qual.append(1)
+            # elif abs(l1met - pupmet) < 30:
+                # qual.append(2)
+            # elif abs(l1met - pupmet) < 40:
+                # qual.append(1)
+            else:
+                qual.append(0)
+        qual = pd.DataFrame(qual)
+
+        scaler = StandardScaler()
+        if scaleData:
+            X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
+        X_train = X.sample(frac=trainFrac, random_state=3).dropna()
+        Y_train = qual.loc[X_train.index]
+
+        model = self.generate_model()
+        history = model.fit(X_train, Y_train)
+        model.save_model(create_file_dir(self.output()["model"].path))
+
+        Xp = X.drop(X_train.index)
+        Yp = model.predict(Xp)
+        Ytrue = qual.drop(X_train.index)
+
+        # from sklearn.metrics import confusion_matrix, accuracy_score
+        # c = confusion_matrix(Ytrue, Yp)
+        # print(c)
+        # accuracy = accuracy_score(Ytrue, Yp)
+        # print("Accuracy: %.2f%%" % (accuracy * 100.0))
+
+
+class BDTQualityTrainingWorkflowBase(MLTrainingWorkflowBase):
+    #training_workflow_file = BDTTrainingTask.training_workflow_file
+    training_workflow_file = "hyperopt_bdt_q"
+
+
+class BDTQualityTrainingWorkflow(BDTQualityTrainingWorkflowBase):
+    def requires(self):
+        return BDTQualityTraining.vreq(self, **self.matching_branch_data(BDTQualityTraining))
+        
+    def output(self):
+        return self.requires().output()
+
+    def run(self):
+        pass

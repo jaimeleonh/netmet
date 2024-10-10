@@ -9,16 +9,10 @@ training_workflow:
     # training_category_name: vbf_common_os_even
     # training_config_name: default
     feature_tag: default
-    architecture: 32_32:relu
-    loss_name: mean_absolute_percentage_error
-    #l2_norm: 2.e-3
-    #event_weights: False
-    learning_rate: 0.01
-    dropout_rate: 0.
-    batch_norm: True
-    batch_size: 500
+    n_estimators: 10
+    # objective: multi:softmax
+    objective: binary:logistic
     random_seed: 1
-    epochs: 10
     # config_name: base_2018
     # data_config_names: ["base_2016", "base_2017"]
     # skip_dataset_tags: ["other", "bsm"]
@@ -29,17 +23,13 @@ training_workflow:
   # training "branches", each one extending the defaults above
   branches:
     0: {}
-    1: {random_seed: 2}
-    2: {architecture: 128_128:relu}
-    3: {ref: 2, epochs: 100}
-    4: {ref: 2, epochs: 40}
-    5: {architecture: 32_32_32:relu, epochs: 50}
-    6: {architecture: 32_32:relu, epochs: 50}
-    7: {architecture: 56_28:relu, epochs: 50}
-    8: {ref: 7, loss_name: mean_squared_error}
-    9: {ref: 7, loss_name: mean_absolute_error}
-    10: {ref: 7, loss_name: mean_squared_logarithmic_error}
-    11: {ref: 7, loss_name: cosine_similarity} # useless
+    1: {n_estimators: 20}
+    2: {feature_tag: eg}
+    3: {ref: 2, n_estimators: 20}
+    4: {n_estimators: 30}
+    #2: {architecture: 128_128:relu}
+    #3: {ref: 2, epochs: 100}
+    #4: {ref: 2, epochs: 40}
     #3: {event_weights: False}
     #4: {batch_norm: False}
     #5: {feature_tag: lbn}
