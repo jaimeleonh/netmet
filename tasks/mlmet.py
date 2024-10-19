@@ -267,9 +267,6 @@ class MLTraining(MLTrainingTask):
 
         with tf.device(self.device):
             model = self.generate_model(X_train)
-            print(model.summary())
-            import sys
-            sys.exit()
             history = model.fit(X_train, Y_train, epochs=self.epochs, batch_size=self.batch_size,
                 validation_split=0.3, verbose=1)
             model.save(create_file_dir(self.output()["model"].path))
