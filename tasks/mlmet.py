@@ -551,6 +551,8 @@ class BDTTrainingTask(ConfigTask):
         "the training, default: default")
     n_estimators = luigi.IntParameter(default=10, description="an integer "
         "describing the number of estimators, default: 10")
+    max_depth = luigi.IntParameter(default=6, description="an integer "
+        "describing the maximum depth of each estimator, default: 6")
     objective = luigi.Parameter(default="reg:linear", description="the name of "
         "the loss function, default: neg_mean_absolute_error")
     random_seed = luigi.IntParameter(default=1, description="random seed for weight "
@@ -567,7 +569,7 @@ class BDTTrainingTask(ConfigTask):
         "jobs to a gpu, default: False")
 
     training_hash_params = [
-        "feature_tag", "n_estimators", "objective", "random_seed", "signal_dataset_name",
+        "feature_tag", "n_estimators", "max_depth", "objective", "random_seed", "signal_dataset_name",
         # "training_category_name", "training_config_name", "l2_norm", "event_weights",
     ]
 
@@ -608,6 +610,7 @@ class BDTTrainingTask(ConfigTask):
             #fmt("training_category_name", "TC", str),
             fmt("feature_tag", "FT", lambda v: v.replace("*", "X").replace("?", "Y")),
             fmt("n_estimators", "N", int),
+            fmt("max_depth", "MD", int),
             fmt("objective", "OBJ", lambda v: v.replace(":", "_")),
             fmt("random_seed", "RS", int),
             fmt("signal_dataset_name", "SIG", str),
@@ -658,13 +661,14 @@ class BDTTraining(BDTTrainingTask):
 
     def output(self):
         return {
-            "model": self.local_target("model.json"),
+            "json": self.local_target("model.json"),
+            "model": self.local_target("model.model"),
         }
 
     def generate_model(self):
         import xgboost
         return xgboost.XGBRegressor(objective=self.objective, n_estimators=self.n_estimators,
-            seed=self.random_seed)
+            seed=self.random_seed, max_depth=self.max_depth)
 
     def run(self):
         from sklearn.preprocessing import StandardScaler
@@ -674,8 +678,8 @@ class BDTTraining(BDTTrainingTask):
         scaleData = feature_params.get("scaleData", False)
         min_puppi_pt = feature_params.get("min_puppi_pt", -1)
 
-        X, Y = MLTraining.get_data(self, nfiles=-1, min_puppi_pt=min_puppi_pt)
-        # X, Y = MLTraining.get_data(self, nfiles=2)
+        #X, Y = MLTraining.get_data(self, nfiles=-1, min_puppi_pt=min_puppi_pt)
+        X, Y = MLTraining.get_data(self, nfiles=2)
 
         scaler = StandardScaler()
         if scaleData:
@@ -685,6 +689,7 @@ class BDTTraining(BDTTrainingTask):
 
         model = self.generate_model()
         history = model.fit(X_train, Y_train)
+        model.save_model(create_file_dir(self.output()["json"].path))
         model.save_model(create_file_dir(self.output()["model"].path))
 
 
@@ -824,3 +829,118 @@ class BDTQualityTrainingWorkflow(BDTQualityTrainingWorkflowBase):
 
     def run(self):
         pass
+
+
+# BDT Signal vs Background
+
+class BDTSigBkgTraining(BDTTraining):
+
+    def generate_model(self):
+        import xgboost
+        return xgboost.XGBClassifier(objective=self.objective, n_estimators=self.n_estimators,
+            seed=self.random_seed)
+
+    def run(self):
+        from sklearn.preprocessing import StandardScaler
+
+        feature_params = self.config.training_feature_groups()[self.feature_tag]
+        trainFrac = feature_params.get("trainFrac", 0.5)
+        scaleData = feature_params.get("scaleData", False)
+        min_puppi_pt = feature_params.get("min_puppi_pt", -1)
+
+        # X, Y = MLTraining.get_data(self, nfiles=-1, min_puppi_pt=min_puppi_pt)
+        X, _ = MLTraining.get_data(self, output_y=False, nfiles=10)
+        X_bkg, _ = MLTraining.get_data(self, nfiles=5, dataset=self.background_dataset,
+            output_y=False)
+
+        qual = []
+        for l1met, pupmet in zip(X['methf_0_pt'], Y["PuppiMET_pt"]):
+            if pupmet - l1met < 20:
+                qual.append(1)
+            # elif abs(l1met - pupmet) < 30:
+                # qual.append(2)
+            # elif abs(l1met - pupmet) < 40:
+                # qual.append(1)
+            else:
+                qual.append(0)
+        qual = pd.DataFrame(qual)
+
+        scaler = StandardScaler()
+        if scaleData:
+            X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
+        X_train = X.sample(frac=trainFrac, random_state=3).dropna()
+        Y_train = qual.loc[X_train.index]
+
+        model = self.generate_model()
+        history = model.fit(X_train, Y_train)
+        model.save_model(create_file_dir(self.output()["model"].path))
+
+        Xp = X.drop(X_train.index)
+        Yp = model.predict(Xp)
+        Ytrue = qual.drop(X_train.index)
+
+        # from sklearn.metrics import confusion_matrix, accuracy_score
+        # c = confusion_matrix(Ytrue, Yp)
+        # print(c)
+        # accuracy = accuracy_score(Ytrue, Yp)
+        # print("Accuracy: %.2f%%" % (accuracy * 100.0))
+
+
+class BDTQualityTrainingWorkflowBase(MLTrainingWorkflowBase):
+    #training_workflow_file = BDTTrainingTask.training_workflow_file
+    training_workflow_file = "hyperopt_bdt_q"
+
+
+class BDTQualityTrainingWorkflow(BDTQualityTrainingWorkflowBase):
+    def requires(self):
+        return BDTQualityTraining.vreq(self, **self.matching_branch_data(BDTQualityTraining))
+        
+    def output(self):
+        return self.requires().output()
+
+    def run(self):
+        pass
+
+
+class BDTInputPrinter(BDTTrainingTask):
+    def __init__(self, *args, **kwargs):
+        super(BDTInputPrinter, self).__init__(*args, **kwargs)
+        self.signal_dataset = self.config.datasets.get(self.signal_dataset_name)
+        # self.device = "GPU: 0" if self.use_gpu else "CPU: 0"
+
+    def requires(self):
+        return InputData.req(self, dataset_name=self.signal_dataset_name, file_index=0)
+        # I don't really need it, it's just a placeholder
+
+    def output(self):
+        return {
+            "x_train": self.local_target("x_train.npy"),
+            "y_train": self.local_target("y_train.npy"),
+            "x_valid": self.local_target("x_valid.npy"),
+            "y_valid": self.local_target("y_valid.npy"),
+        }
+
+    def run(self):
+        from sklearn.preprocessing import StandardScaler
+
+        feature_params = self.config.training_feature_groups()[self.feature_tag]
+        trainFrac = feature_params.get("trainFrac", 0.5)
+        scaleData = feature_params.get("scaleData", False)
+        min_puppi_pt = feature_params.get("min_puppi_pt", -1)
+
+        #X, Y = MLTraining.get_data(self, nfiles=-1, min_puppi_pt=min_puppi_pt)
+        X, Y = MLTraining.get_data(self, nfiles=2)
+
+        scaler = StandardScaler()
+        if scaleData:
+            X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
+        x_train = X.sample(frac=trainFrac, random_state=3).dropna()
+        y_train = Y.loc[x_train.index]
+        
+        x_valid = X.drop(x_train.index)
+        y_valid = Y.drop(y_train.index)
+    
+        outputs = self.output()
+        for cat in ["x_train", "y_train", "x_valid", "y_valid"]:
+            with open(create_file_dir(outputs[cat].path), "wb+") as f:
+                np.save(f, eval(cat))

@@ -10,6 +10,7 @@ training_workflow:
     # training_config_name: default
     feature_tag: default
     n_estimators: 10
+    max_depth: 6
     objective: reg:linear
     random_seed: 1
     # config_name: base_2018
@@ -25,6 +26,7 @@ training_workflow:
     1: {n_estimators: 20}
     2: {feature_tag: eg}
     3: {ref: 2, n_estimators: 20}
+    4: {ref: 1, max_depth: 4}
     #2: {architecture: 128_128:relu}
     #3: {ref: 2, epochs: 100}
     #4: {ref: 2, epochs: 40}
