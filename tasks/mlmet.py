@@ -279,7 +279,7 @@ class MLTraining(MLTrainingTask):
             plt.legend()
             plt.savefig(create_file_dir(self.output()["loss"].path))
             plt.close()
-            
+
             # acc plotting
             plt.plot(history.history['mean_squared_error'], label="Training accuracy")
             plt.plot(history.history['val_mean_squared_error'], label="Validation accuracy")
@@ -340,13 +340,23 @@ class BaseValidationTask():
     def output(self):
         return {
             "rate": self.local_target("rate_comparison.pdf"),
+            "x_rate": self.local_target("x_rate.npy"),
+            "y_rate": self.local_target("y_rate.npy"),
             "resolution": self.local_target("resolution_comparison.pdf"),
+            "x_resolution": self.local_target("x_resolution.npy"),
+            "y_resolution": self.local_target("y_resolution.npy"),
             "dist": self.local_target("distributions.pdf"),
+            "x_dist": self.local_target("x_distributions.pdf"),
+            "y_dist": self.local_target("y_distributions.pdf"),
             "netmet_met": self.local_target(f"l1netmet_vs_l1met__puppimet_{self.puppi_met_cut}.pdf"),
             "netmet_met_log": self.local_target(f"l1netmet_vs_l1met__puppimet_{self.puppi_met_cut}_log.pdf"),
             "netmet_puppi": self.local_target(f"l1netmet_vs_puppimet__puppimet_{self.puppi_met_cut}.pdf"),
             "netmet_puppi_log": self.local_target(f"l1netmet_vs_puppimet__puppimet_{self.puppi_met_cut}_log.pdf"),
             "efficiency": self.local_target("efficiency.pdf"),
+            "x_efficiency": self.local_target("x_efficiency.npy"),
+            "y_efficiency": self.local_target("y_efficiency.npy"),
+            "y_error_efficiency": self.local_target("y_error_efficiency.npy"),
+            "netMET_thresh": self.local_target("netMET_thresh.txt"),
         }
 
     def get_performance_plots(self, X, Y, X_train, Y_train, Xp, Yp, Xp_bkg, Yp_bkg):
@@ -368,6 +378,12 @@ class BaseValidationTask():
 
         rateHist = plt.hist(l1MET_bkg, bins=bins, range=xrange, histtype='step', label='L1 MET Rate', cumulative=-1, log=True)
         rateHist_netMET = plt.hist(l1NetMET_bkg, bins=bins, range=xrange, histtype='step', label='L1 NET MET Rate', cumulative=-1, log=True)
+
+        with open(create_file_dir(self.output()["x_rate"].path), "wb+") as f:
+            np.save(f, rateHist_netMET[1])
+        with open(create_file_dir(self.output()["y_rate"].path), "wb+") as f:
+            np.save(f, rateHist_netMET[0])
+
         plt.legend()
         plt.savefig(create_file_dir(self.output()["rate"].path))
         plt.close('all')
@@ -385,7 +401,13 @@ class BaseValidationTask():
         l1MET_test = l1MET.drop(X_train.index)
         puppiMETNoMu_df_test = Y.drop(X_train.index)
         plt.hist((l1MET_test - puppiMETNoMu_df_test['PuppiMET_pt']), bins=80, range=[-100, 100], label="L1 MET Diff", histtype='step')
-        plt.hist((l1NetMET - puppiMETNoMu_df_test['PuppiMET_pt']), bins=80, range=[-100, 100], label="L1 NET MET Diff", histtype='step')
+        result = plt.hist((l1NetMET - puppiMETNoMu_df_test['PuppiMET_pt']), bins=80, range=[-100, 100], label="L1 NET MET Diff", histtype='step')
+
+        with open(create_file_dir(self.output()["x_resolution"].path), "wb+") as f:
+            np.save(f, result[1])
+        with open(create_file_dir(self.output()["y_resolution"].path), "wb+") as f:
+            np.save(f, result[0])
+
         plt.legend()
         plt.savefig(create_file_dir(self.output()["resolution"].path))
         plt.close('all')
@@ -396,7 +418,13 @@ class BaseValidationTask():
 
         plt.hist(puppiMETNoMu_df_test['PuppiMET_pt'], bins=100, range=[0, 200], histtype='step', log=True, label="PUPPI MET NoMu")
         plt.hist(l1MET_test, bins=100, range=[0, 200], histtype='step', label="L1MET")
-        plt.hist(l1NetMET, bins=100, range=[0, 200], histtype='step', label="L1 Net MET ")
+        result = plt.hist(l1NetMET, bins=100, range=[0, 200], histtype='step', label="L1 Net MET")
+
+        with open(create_file_dir(self.output()["x_dist"].path), "wb+") as f:
+            np.save(f, result[1])
+        with open(create_file_dir(self.output()["y_dist"].path), "wb+") as f:
+            np.save(f, result[0])
+
         plt.legend(fontsize=16)
         plt.savefig(create_file_dir(self.output()["dist"].path))
         plt.close('all')
@@ -474,6 +502,16 @@ class BaseValidationTask():
             marker='o', capsize=7, linestyle='none')
         plt.errorbar(xvals, netMET_eff_data, netMET_eff_errors, label="L1 NETMET > " + str(netMET_thresh),
             marker='o', capsize=7, linestyle='none')
+
+        with open(create_file_dir(self.output()["x_efficiency"].path), "wb+") as f:
+            np.save(f, xvals)
+        with open(create_file_dir(self.output()["y_efficiency"].path), "wb+") as f:
+            np.save(f, np.array(netMET_eff_data))
+        with open(create_file_dir(self.output()["y_error_efficiency"].path), "wb+") as f:
+            np.save(f, np.array(netMET_eff_errors))
+        with open(create_file_dir(self.output()["netMET_thresh"].path), "w+") as f:
+            f.write(str(netMET_thresh))
+
         ax.set_xlabel('PUPPI MET No Mu [GeV]')
         ax.set_ylabel('Efficiency')
         plt.legend()
@@ -675,8 +713,8 @@ class BDTTraining(BDTTrainingTask):
         scaleData = feature_params.get("scaleData", False)
         min_puppi_pt = feature_params.get("min_puppi_pt", -1)
 
-        #X, Y = MLTraining.get_data(self, nfiles=-1, min_puppi_pt=min_puppi_pt)
-        X, Y = MLTraining.get_data(self, nfiles=2)
+        X, Y = MLTraining.get_data(self, nfiles=50, min_puppi_pt=min_puppi_pt)
+        # X, Y = MLTraining.get_data(self, nfiles=2)
 
         scaler = StandardScaler()
         if scaleData:
@@ -708,8 +746,8 @@ class BDTTrainingWorkflow(BDTTrainingWorkflowBase):
 class BDTValidation(BaseValidationTask, BDTTraining):
     background_dataset_name = luigi.Parameter(default="background", description="name of the "
         "background dataset, default: background")
-    l1_met_threshold = luigi.IntParameter(default=50, description="value of the MET threshold, "
-        "default: 50")
+    l1_met_threshold = luigi.IntParameter(default=80, description="value of the MET threshold, "
+        "default: 80")
     puppi_met_cut = luigi.IntParameter(default=0, description="minimum cut on the PuppiMET value, "
         "default: 0")
 
@@ -728,7 +766,8 @@ class BDTValidation(BaseValidationTask, BDTTraining):
         scaleData = feature_params.get("scaleData", False)
         trainFrac = feature_params.get("trainFrac", 0.5)
 
-        X, Y = MLTraining.get_data(self, nfiles=200)
+        X, Y = MLTraining.get_data(self, nfiles=10)
+        # X, Y = MLTraining.get_data(self, nfiles=2)
 
         scaler = StandardScaler()
         if scaleData:
@@ -746,6 +785,7 @@ class BDTValidation(BaseValidationTask, BDTTraining):
         Yp = model.predict(Xp)
 
         Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=50)
+        # Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=1)
         if scaleData:
             Xp_bkg[Xp_bkg.columns] = pd.DataFrame(scaler.fit_transform(Xp_bkg))
 
@@ -820,7 +860,7 @@ class BDTQualityTrainingWorkflowBase(MLTrainingWorkflowBase):
 class BDTQualityTrainingWorkflow(BDTQualityTrainingWorkflowBase):
     def requires(self):
         return BDTQualityTraining.vreq(self, **self.matching_branch_data(BDTQualityTraining))
-        
+
     def output(self):
         return self.requires().output()
 
@@ -891,7 +931,7 @@ class BDTQualityTrainingWorkflowBase(MLTrainingWorkflowBase):
 class BDTQualityTrainingWorkflow(BDTQualityTrainingWorkflowBase):
     def requires(self):
         return BDTQualityTraining.vreq(self, **self.matching_branch_data(BDTQualityTraining))
-        
+
     def output(self):
         return self.requires().output()
 
@@ -933,11 +973,83 @@ class BDTInputPrinter(BDTTrainingTask):
             X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
         x_train = X.sample(frac=trainFrac, random_state=3).dropna()
         y_train = Y.loc[x_train.index]
-        
+
         x_valid = X.drop(x_train.index)
         y_valid = Y.drop(y_train.index)
-    
+
         outputs = self.output()
         for cat in ["x_train", "y_train", "x_valid", "y_valid"]:
             with open(create_file_dir(outputs[cat].path), "wb+") as f:
                 np.save(f, eval(cat))
+
+
+class BaseComparisonTask():
+    def output(self):
+        return {
+            "rate": self.local_target("rate.pdf"),
+            "resolution": self.local_target("resolution.pdf"),
+            "dist": self.local_target("distributions.pdf"),
+            "efficiency": self.local_target("efficiency.pdf"),
+        }
+
+    def store_parts(self):
+        parts = super(BaseComparisonTask, self).store_parts()
+        del parts["training_hash"]
+        return parts
+
+    def get_comparison_plots(self, inputs):
+        from matplotlib import pyplot as plt
+
+        # Rate, resolution, and distributions
+        x_labels = {
+            "rate": "L1 NET MET [GeV]",
+            "dist": "L1 NET MET [GeV]",
+            "resolution": "L1 NET MET - Puppi MET No Mu [GeV]",
+        }
+        for plot in ["rate", "dist", "resolution"]:
+            ax = plt.subplot()
+            for key, vals in inputs.items():
+                with open(vals[f'x_{plot}'].path, 'rb') as f:
+                    x = np.load(f)
+                with open(vals[f'y_{plot}'].path, 'rb') as f:
+                    y = np.load(f)
+                plt.stairs(y, x, label=f"Branch {key}")
+            ax.set_xlabel(x_labels[plot])
+            ax.set_ylabel('Events')
+            plt.legend()
+            plt.savefig(create_file_dir(self.output()[plot].path))
+            plt.close('all')
+
+        # Efficiency
+        ax = plt.subplot()
+        for key, vals in inputs.items():
+            with open(vals[f'x_efficiency'].path, 'rb') as f:
+                x = np.load(f)
+            with open(vals[f'y_efficiency'].path, 'rb') as f:
+                y = np.load(f)
+            with open(vals[f'y_error_efficiency'].path, 'rb') as f:
+                y_errors = np.load(f)
+            with open(vals[f'netMET_thresh'].path, 'r') as f:
+                netMET_thresh = f.readlines()[0].strip()
+            plt.errorbar(x, y, y_errors, label=f"Branch {key}, L1 NETMET > " + str(netMET_thresh),
+                marker='o', capsize=7, linestyle='none')
+        ax.set_xlabel('PUPPI MET No Mu [GeV]')
+        ax.set_ylabel('Efficiency')
+        plt.legend()
+        plt.savefig(create_file_dir(self.output()["efficiency"].path))
+        plt.close('all')
+
+    def run(self):
+        inputs = self.input()
+        inputs = {key: vals for key, vals in inputs["collection"].targets.items()}
+        self.get_comparison_plots(inputs)
+
+
+class MLComparison(BaseComparisonTask, MLValidation):
+    def requires(self):
+        return MLValidationWorkflow.vreq(self)
+
+
+class BDTComparison(BaseComparisonTask, BDTValidation):
+    def requires(self):
+        return BDTValidationWorkflow.vreq(self)
