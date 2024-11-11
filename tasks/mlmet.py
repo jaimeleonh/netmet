@@ -185,6 +185,7 @@ class MLTraining(MLTrainingTask):
         from keras.models import Sequential
         from keras.layers import Dense, Dropout, Normalization
         from keras.optimizers import Adam
+        print('Training input shape:', X_train.shape)
 
         model = Sequential()
         if self.batch_norm:
@@ -256,12 +257,18 @@ class MLTraining(MLTrainingTask):
         trainFrac = feature_params.get("trainFrac", 0.5)
         min_puppi_pt = feature_params.get("min_puppi_pt", -1)
 
-        # X, Y = self.get_data(nfiles=-1, min_puppi_pt=min_puppi_pt)
-        X, Y = self.get_data(nfiles=2, min_puppi_pt=min_puppi_pt)
+        #X, Y = self.get_data(nfiles=-1, min_puppi_pt=min_puppi_pt)
+        X, Y = self.get_data(nfiles=200, min_puppi_pt=min_puppi_pt)
+        #df = pd.read_csv('/eos/user/s/sedurgut/clean_data.csv', index_col=0)
+
+        #X = df.drop(columns='PuppiMET_pt')
+        #Y = df['PuppiMET_pt']
+
 
         scaler = StandardScaler()
         if scaleData:
             X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
+
         X_train = X.sample(frac=trainFrac, random_state=3).dropna()
         Y_train = Y.loc[X_train.index]
 
@@ -347,12 +354,15 @@ class BaseValidationTask():
             "netmet_puppi": self.local_target(f"l1netmet_vs_puppimet__puppimet_{self.puppi_met_cut}.pdf"),
             "netmet_puppi_log": self.local_target(f"l1netmet_vs_puppimet__puppimet_{self.puppi_met_cut}_log.pdf"),
             "efficiency": self.local_target("efficiency.pdf"),
+            "json": self.local_target("plotting_data_.json")
         }
 
     def get_performance_plots(self, X, Y, X_train, Y_train, Xp, Yp, Xp_bkg, Yp_bkg):
         import utils.plotting as plotting
         from matplotlib import pyplot as plt
         from matplotlib.colors import LogNorm, NoNorm
+
+        plotting_data = {}
 
         ##################################
         # L1 MET rate vs L1 NET MET rate #
@@ -372,9 +382,21 @@ class BaseValidationTask():
         plt.savefig(create_file_dir(self.output()["rate"].path))
         plt.close('all')
 
+        #save the values to a json file 
+
+        plotting_data['rate'] = {
+            'l1MET_bkg': l1MET_bkg.tolist(),
+            "l1NetMET_bkg": l1NetMET_bkg.tolist()
+        }
+
         # get rate at threshold
         l1MET_fixed_rate = rateHist[0][int(self.l1_met_threshold) * int((xrange[1] / bins))]
         netMET_thresh = plotting.getThreshForRate(rateHist_netMET[0], bins, l1MET_fixed_rate)
+
+        plotting_data["rate"]["l1MET_fixed_rate"] = l1MET_fixed_rate
+        plotting_data["rate"]["netMET_thresh"] = netMET_thresh
+
+
 
         ##################
         # MET Resolution #
@@ -384,22 +406,41 @@ class BaseValidationTask():
         l1NetMET = Yp.flatten()
         l1MET_test = l1MET.drop(X_train.index)
         puppiMETNoMu_df_test = Y.drop(X_train.index)
-        plt.hist((l1MET_test - puppiMETNoMu_df_test['PuppiMET_pt']), bins=80, range=[-100, 100], label="L1 MET Diff", histtype='step')
-        plt.hist((l1NetMET - puppiMETNoMu_df_test['PuppiMET_pt']), bins=80, range=[-100, 100], label="L1 NET MET Diff", histtype='step')
+        l1MET_diff = l1MET_test - puppiMETNoMu_df_test['PuppiMET_pt']
+        l1NetMET_diff = l1NetMET - puppiMETNoMu_df_test['PuppiMET_pt']
+
+        plt.hist(l1MET_diff, bins=80, range=[-100, 100], label="L1 MET Diff", histtype='step')
+        plt.hist(l1NetMET_diff, bins=80, range=[-100, 100], label="L1 NET MET Diff", histtype='step')
         plt.legend()
         plt.savefig(create_file_dir(self.output()["resolution"].path))
         plt.close('all')
+
+        plotting_data['resolution'] = {
+            'l1MET_diff': l1MET_diff.tolist(),
+            'l1NetMET_diff': l1NetMET_diff.tolist()
+        }
 
         #################
         # Distributions #
         #################
 
-        plt.hist(puppiMETNoMu_df_test['PuppiMET_pt'], bins=100, range=[0, 200], histtype='step', log=True, label="PUPPI MET NoMu")
-        plt.hist(l1MET_test, bins=100, range=[0, 200], histtype='step', label="L1MET")
-        plt.hist(l1NetMET, bins=100, range=[0, 200], histtype='step', label="L1 Net MET ")
+
+
+        puppiMET_hist = plt.hist(puppiMETNoMu_df_test['PuppiMET_pt'], bins=100, range=[0, 200], histtype='step', log=True, label="PUPPI MET NoMu")
+        l1MET_hist = plt.hist(l1MET_test, bins=100, range=[0, 200], histtype='step', label="L1MET")
+        l1NetMET_hist = plt.hist(l1NetMET, bins=100, range=[0, 200], histtype='step', label="L1 Net MET ")
         plt.legend(fontsize=16)
         plt.savefig(create_file_dir(self.output()["dist"].path))
         plt.close('all')
+
+        plotting_data["distribution"] = {
+        "puppiMETNoMu": puppiMET_hist[0].tolist(),
+        "l1MET": l1MET_hist[0].tolist(),
+        "l1NetMET": l1NetMET_hist[0].tolist()
+                }
+        #######################
+        # Additional 2D Plots #
+        #######################
 
         import awkward as ak
         fig = plt.figure()
@@ -410,14 +451,20 @@ class BaseValidationTask():
         except:
             Yp_flat = Yp
 
-        img = plt.hist2d(ak.to_numpy(Yp_flat), l1MET_test, bins=[50, 50],
+        hist2d_netmet_met, x_edges, y_edges, img = plt.hist2d(ak.to_numpy(Yp_flat), l1MET_test, bins=[50, 50],
             range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
                 [self.puppi_met_cut, 200 + self.puppi_met_cut]])
-        cbar = fig.colorbar(img[3])
+        cbar = fig.colorbar(img)
         ax.set_xlabel('L1 NET MET [GeV]')
         ax.set_ylabel('L1 MET [GeV]')
         plt.savefig(create_file_dir(self.output()["netmet_met"].path))
         plt.close('all')
+
+        plotting_data["l1netmet_vs_l1met"] = {
+        "hist2d": hist2d_netmet_met.tolist(),
+        "x_edges": x_edges.tolist(),
+        "y_edges": y_edges.tolist()
+        }
 
         fig = plt.figure()
         ax = plt.subplot()
@@ -431,6 +478,7 @@ class BaseValidationTask():
         ax.set_ylabel('L1 MET [GeV]')
         plt.savefig(create_file_dir(self.output()["netmet_met_log"].path))
         plt.close('all')
+
 
         fig = plt.figure()
         ax = plt.subplot()
@@ -458,11 +506,17 @@ class BaseValidationTask():
         plt.savefig(create_file_dir(self.output()["netmet_puppi_log"].path))
         plt.close('all')
 
+
+
+        json_output_path = create_file_dir(self.output()["json"].path)
+        with open(json_output_path, "w") as json_file:
+            json.dump(plotting_data, json_file, indent=4)
+
         ##################
         # MET Efficiency #
         ##################
 
-        fig = plt.figure()
+'''        fig = plt.figure()
         ax = plt.subplot()
         eff_data, xvals, eff_errors = plotting.efficiency(l1MET, Y['PuppiMET_pt'],
             self.l1_met_threshold, 10, 400)
@@ -478,7 +532,11 @@ class BaseValidationTask():
         ax.set_ylabel('Efficiency')
         plt.legend()
         plt.savefig(create_file_dir(self.output()["efficiency"].path))
-        plt.close('all')
+        plt.close('all')'''
+
+
+
+
 
 
 class MLValidation(BaseValidationTask, MLTraining):
@@ -509,10 +567,16 @@ class MLValidation(BaseValidationTask, MLTraining):
         trainFrac = feature_params.get("trainFrac", 0.5)
 
         X, Y = self.get_data(nfiles=200)
+        #df = pd.read_csv('/eos/user/s/sedurgut/clean_data.csv', index_col=0)
+
+        #X = df.drop(columns='PuppiMET_pt')
+        #Y = df[['PuppiMET_pt']]        
+          
 
         scaler = StandardScaler()
         if scaleData:
             X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
+
         X_train = X.sample(frac=trainFrac, random_state=3).dropna()
         Y_train = Y.loc[X_train.index]
 
@@ -522,6 +586,8 @@ class MLValidation(BaseValidationTask, MLTraining):
         with tf.device(self.device):
             model = keras.models.load_model(modelFile)
             Yp = model.predict(Xp)
+        
+
 
         Xp_bkg, _ = self.get_data(self.background_dataset, nfiles=50, output_y=False)
         if scaleData:
