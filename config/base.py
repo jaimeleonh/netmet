@@ -74,6 +74,10 @@ class Config(cmt_config):
                 process=self.processes.get("signal"),
                 check_empty=False,
                 prefix="eoscms.cern.ch/",
+                skipFiles=[
+                    "/store/group/dpg_trigger/comm_trigger/L1Trigger/bundocka/Muon0/zmu24E_NetMET/240628_140553/0000/nano_130.root",
+                    "/store/group/dpg_trigger/comm_trigger/L1Trigger/bundocka/Muon0/zmu24E_NetMET/240628_140553/0000/nano_290.root"
+                ]
             ),
         ]
         return ObjectCollection(datasets)
