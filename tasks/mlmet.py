@@ -237,6 +237,8 @@ class MLTraining(MLTrainingTask):
             puppiMET, puppiMET_noMu = tools.getPUPPIMET(data)
             if min_puppi_pt > -1:
                 data, puppiMET_noMu = tools.apply_pt_cut(data, puppiMET_noMu, min_puppi_pt)
+            if remove_saturated:
+                data, puppiMET_noMu = tools.remove_saturated(data, puppiMET_noMu)
             puppiMETNoMu_df = tools.arrayToDataframe(puppiMET_noMu, 'puppiMET_noMu', None)
             collections = tools.getCollections(data, inputSums, inputs)
             df = tools.makeDataframe(collections, None, nObj, keepStruct)
@@ -255,9 +257,10 @@ class MLTraining(MLTrainingTask):
         scaleData = feature_params.get("scaleData", False)
         trainFrac = feature_params.get("trainFrac", 0.5)
         min_puppi_pt = feature_params.get("min_puppi_pt", -1)
+        remove_saturated = feature_params.get("remove_saturated", False)
 
         # X, Y = self.get_data(nfiles=-1, min_puppi_pt=min_puppi_pt)
-        X, Y = self.get_data(nfiles=2, min_puppi_pt=min_puppi_pt)
+        X, Y = self.get_data(nfiles=2, min_puppi_pt=min_puppi_pt, remove_saturated=remove_saturated)
 
         scaler = StandardScaler()
         if scaleData:
@@ -545,8 +548,9 @@ class MLValidation(BaseValidationTask, MLTraining):
         feature_params = self.config.training_feature_groups()[self.feature_tag]
         scaleData = feature_params.get("scaleData", False)
         trainFrac = feature_params.get("trainFrac", 0.5)
+        remove_saturated = feature_params.get("remove_saturated", False)
 
-        X, Y = self.get_data(nfiles=200)
+        X, Y = self.get_data(nfiles=200, remove_saturated=remove_saturated)
 
         scaler = StandardScaler()
         if scaleData:
@@ -712,8 +716,11 @@ class BDTTraining(BDTTrainingTask):
         trainFrac = feature_params.get("trainFrac", 0.5)
         scaleData = feature_params.get("scaleData", False)
         min_puppi_pt = feature_params.get("min_puppi_pt", -1)
+        remove_saturated = feature_params.get("remove_saturated", False)
 
-        X, Y = MLTraining.get_data(self, nfiles=50, min_puppi_pt=min_puppi_pt)
+        print(remove_saturated)
+        X, Y = MLTraining.get_data(self, nfiles=2, min_puppi_pt=min_puppi_pt,
+            remove_saturated=remove_saturated)
         # X, Y = MLTraining.get_data(self, nfiles=2)
 
         scaler = StandardScaler()
