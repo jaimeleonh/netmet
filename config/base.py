@@ -113,6 +113,12 @@ class Config(cmt_config):
                 "inputSums": ["methf", "ntt"],
                 "nObj": 4
             },
+            "default_saturated": {
+                "inputs": ["Jet"],
+                "inputSums": ["methf", "ntt"],
+                "nObj": 4,
+                "remove_saturated": True,
+            },
             "eg": {
                 "inputs": ["Jet", "EG"],
                 "inputSums": ["methf", "ntt"],

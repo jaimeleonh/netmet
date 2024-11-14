@@ -27,6 +27,7 @@ training_workflow:
     2: {feature_tag: eg}
     3: {ref: 2, n_estimators: 20}
     4: {ref: 1, max_depth: 4}
+    5: {ref: 1, feature_tag: default_saturated}
     #2: {architecture: 128_128:relu}
     #3: {ref: 2, epochs: 100}
     #4: {ref: 2, epochs: 40}

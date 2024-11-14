@@ -129,16 +129,6 @@ class MLTrainingTask(ConfigTask):
     def __init__(self, *args, **kwargs):
         super(MLTrainingTask, self).__init__(*args, **kwargs)
 
-        # store the training config
-        # self.training_config = self.config.training[self.training_config_name]
-
-        # store the category and check for compositeness
-        # self.training_category = self.config.categories.get(self.training_category_name)
-        # if self.training_category.x("composite", False) and \
-                # not self.allow_composite_training_category:
-            # raise Exception("training category '{}' is composite, prohibited by task {}".format(
-                # self.training_category.name, self))
-
         # save training features, without minimum feature score filtering applied
         self.training_features = [
             feature for feature in self.config.features
@@ -146,7 +136,6 @@ class MLTrainingTask(ConfigTask):
         ]
 
         # compute the storage hash
-        # print(self.get_training_hash_data())
         self.training_hash = self.create_training_hash(**self.get_training_hash_data())
 
     def get_training_hash_data(self):
@@ -157,11 +146,6 @@ class MLTrainingTask(ConfigTask):
         parts["training_hash"] = self.training_hash
         return parts
 
-    # def expand_training_category(self):
-        # if self.training_category.x("composite", False):
-            # return list(self.training_category.get_leaf_categories())
-        # else:
-            # return [self.training_category]
 
 
 class MLTraining(MLTrainingTask):
@@ -185,6 +169,7 @@ class MLTraining(MLTrainingTask):
         from keras.models import Sequential
         from keras.layers import Dense, Dropout, Normalization
         from keras.optimizers import Adam
+        print('Training input shape:', X_train.shape)
 
         model = Sequential()
         if self.batch_norm:
@@ -208,7 +193,8 @@ class MLTraining(MLTrainingTask):
 
         return model
 
-    def get_data(self, dataset=None, output_y=True, output_df=False, nfiles=-1, min_puppi_pt=-1):
+    def get_data(self, dataset=None, output_y=True, output_df=False, nfiles=-1, min_puppi_pt=-1,
+            remove_saturated=False):
         import utils.tools as tools
 
         if not dataset:
@@ -237,11 +223,13 @@ class MLTraining(MLTrainingTask):
             puppiMET, puppiMET_noMu = tools.getPUPPIMET(data)
             if min_puppi_pt > -1:
                 data, puppiMET_noMu = tools.apply_pt_cut(data, puppiMET_noMu, min_puppi_pt)
-            if remove_saturated:
-                data, puppiMET_noMu = tools.remove_saturated(data, puppiMET_noMu)
             puppiMETNoMu_df = tools.arrayToDataframe(puppiMET_noMu, 'puppiMET_noMu', None)
             collections = tools.getCollections(data, inputSums, inputs)
             df = tools.makeDataframe(collections, None, nObj, keepStruct)
+
+            if remove_saturated:
+                df, puppiMET_noMu = tools.remove_saturated(df, puppiMET_noMu)
+
             return df.copy(), puppiMETNoMu_df.copy()
         else:
             collections = tools.getCollections(data, inputSums, inputs)
@@ -260,11 +248,12 @@ class MLTraining(MLTrainingTask):
         remove_saturated = feature_params.get("remove_saturated", False)
 
         # X, Y = self.get_data(nfiles=-1, min_puppi_pt=min_puppi_pt)
-        X, Y = self.get_data(nfiles=2, min_puppi_pt=min_puppi_pt, remove_saturated=remove_saturated)
+        X, Y = self.get_data(nfiles=200, min_puppi_pt=min_puppi_pt, remove_saturated=remove_saturated)
 
         scaler = StandardScaler()
         if scaleData:
             X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
+
         X_train = X.sample(frac=trainFrac, random_state=3).dropna()
         Y_train = Y.loc[X_train.index]
 
@@ -360,12 +349,16 @@ class BaseValidationTask():
             "y_efficiency": self.local_target("y_efficiency.npy"),
             "y_error_efficiency": self.local_target("y_error_efficiency.npy"),
             "netMET_thresh": self.local_target("netMET_thresh.txt"),
+
+            "json": self.local_target("plotting_data_.json")
         }
 
     def get_performance_plots(self, X, Y, X_train, Y_train, Xp, Yp, Xp_bkg, Yp_bkg):
         import utils.plotting as plotting
         from matplotlib import pyplot as plt
         from matplotlib.colors import LogNorm, NoNorm
+
+        plotting_data = {}
 
         ##################################
         # L1 MET rate vs L1 NET MET rate #
@@ -391,9 +384,21 @@ class BaseValidationTask():
         plt.savefig(create_file_dir(self.output()["rate"].path))
         plt.close('all')
 
+        #save the values to a json file 
+
+        plotting_data['rate'] = {
+            'l1MET_bkg': l1MET_bkg.tolist(),
+            "l1NetMET_bkg": l1NetMET_bkg.tolist()
+        }
+
         # get rate at threshold
         l1MET_fixed_rate = rateHist[0][int(self.l1_met_threshold) * int((xrange[1] / bins))]
         netMET_thresh = plotting.getThreshForRate(rateHist_netMET[0], bins, l1MET_fixed_rate)
+
+        plotting_data["rate"]["l1MET_fixed_rate"] = l1MET_fixed_rate
+        plotting_data["rate"]["netMET_thresh"] = netMET_thresh
+
+
 
         ##################
         # MET Resolution #
@@ -403,8 +408,11 @@ class BaseValidationTask():
         l1NetMET = Yp.flatten()
         l1MET_test = l1MET.drop(X_train.index)
         puppiMETNoMu_df_test = Y.drop(X_train.index)
-        plt.hist((l1MET_test - puppiMETNoMu_df_test['PuppiMET_pt']), bins=80, range=[-100, 100], label="L1 MET Diff", histtype='step')
-        result = plt.hist((l1NetMET - puppiMETNoMu_df_test['PuppiMET_pt']), bins=80, range=[-100, 100], label="L1 NET MET Diff", histtype='step')
+
+        l1MET_diff = l1MET_test - puppiMETNoMu_df_test['PuppiMET_pt']
+        l1NetMET_diff = l1NetMET - puppiMETNoMu_df_test['PuppiMET_pt']
+        plt.hist(l1MET_diff, bins=80, range=[-100, 100], label="L1 MET Diff", histtype='step')
+        result = plt.hist(l1NetMET_diff, bins=80, range=[-100, 100], label="L1 NET MET Diff", histtype='step')
 
         with open(create_file_dir(self.output()["x_resolution"].path), "wb+") as f:
             np.save(f, result[1])
@@ -415,22 +423,36 @@ class BaseValidationTask():
         plt.savefig(create_file_dir(self.output()["resolution"].path))
         plt.close('all')
 
+        plotting_data['resolution'] = {
+            'l1MET_diff': l1MET_diff.tolist(),
+            'l1NetMET_diff': l1NetMET_diff.tolist()
+        }
+
         #################
         # Distributions #
         #################
 
-        plt.hist(puppiMETNoMu_df_test['PuppiMET_pt'], bins=100, range=[0, 200], histtype='step', log=True, label="PUPPI MET NoMu")
-        plt.hist(l1MET_test, bins=100, range=[0, 200], histtype='step', label="L1MET")
-        result = plt.hist(l1NetMET, bins=100, range=[0, 200], histtype='step', label="L1 Net MET")
+        puppiMET_hist = plt.hist(puppiMETNoMu_df_test['PuppiMET_pt'], bins=100, range=[0, 200], histtype='step', log=True, label="PUPPI MET NoMu")
+        l1MET_hist = plt.hist(l1MET_test, bins=100, range=[0, 200], histtype='step', label="L1MET")
+        l1NetMET_hist = plt.hist(l1NetMET, bins=100, range=[0, 200], histtype='step', label="L1 Net MET ")
 
         with open(create_file_dir(self.output()["x_dist"].path), "wb+") as f:
-            np.save(f, result[1])
+            np.save(f, l1NetMET_hist[1])
         with open(create_file_dir(self.output()["y_dist"].path), "wb+") as f:
-            np.save(f, result[0])
+            np.save(f, l1NetMET_hist[0])
 
         plt.legend(fontsize=16)
         plt.savefig(create_file_dir(self.output()["dist"].path))
         plt.close('all')
+
+        plotting_data["distribution"] = {
+            "puppiMETNoMu": puppiMET_hist[0].tolist(),
+            "l1MET": l1MET_hist[0].tolist(),
+            "l1NetMET": l1NetMET_hist[0].tolist()
+        }
+        #######################
+        # Additional 2D Plots #
+        #######################
 
         import awkward as ak
         fig = plt.figure()
@@ -441,14 +463,20 @@ class BaseValidationTask():
         except:
             Yp_flat = Yp
 
-        img = plt.hist2d(ak.to_numpy(Yp_flat), l1MET_test, bins=[50, 50],
+        hist2d_netmet_met, x_edges, y_edges, img = plt.hist2d(ak.to_numpy(Yp_flat), l1MET_test, bins=[50, 50],
             range=[[self.puppi_met_cut, 200 + self.puppi_met_cut],
                 [self.puppi_met_cut, 200 + self.puppi_met_cut]])
-        cbar = fig.colorbar(img[3])
+        cbar = fig.colorbar(img)
         ax.set_xlabel('L1 NET MET [GeV]')
         ax.set_ylabel('L1 MET [GeV]')
         plt.savefig(create_file_dir(self.output()["netmet_met"].path))
         plt.close('all')
+
+        plotting_data["l1netmet_vs_l1met"] = {
+            "hist2d": hist2d_netmet_met.tolist(),
+            "x_edges": x_edges.tolist(),
+            "y_edges": y_edges.tolist()
+        }
 
         fig = plt.figure()
         ax = plt.subplot()
@@ -488,6 +516,10 @@ class BaseValidationTask():
         ax.set_ylabel('PUPPI MET No Mu [GeV]')
         plt.savefig(create_file_dir(self.output()["netmet_puppi_log"].path))
         plt.close('all')
+  
+        json_output_path = create_file_dir(self.output()["json"].path)
+        with open(json_output_path, "w") as json_file:
+            json.dump(plotting_data, json_file, indent=4)
 
         ##################
         # MET Efficiency #
@@ -555,6 +587,7 @@ class MLValidation(BaseValidationTask, MLTraining):
         scaler = StandardScaler()
         if scaleData:
             X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
+
         X_train = X.sample(frac=trainFrac, random_state=3).dropna()
         Y_train = Y.loc[X_train.index]
 
@@ -565,6 +598,7 @@ class MLValidation(BaseValidationTask, MLTraining):
             model = keras.models.load_model(modelFile)
             Yp = model.predict(Xp)
 
+        # Background
         Xp_bkg, _ = self.get_data(self.background_dataset, nfiles=50, output_y=False)
         if scaleData:
             Xp_bkg[Xp_bkg.columns] = pd.DataFrame(scaler.fit_transform(Xp_bkg))
@@ -659,16 +693,6 @@ class BDTTrainingTask(ConfigTask):
     def __init__(self, *args, **kwargs):
         super(BDTTrainingTask, self).__init__(*args, **kwargs)
 
-        # store the training config
-        # self.training_config = self.config.training[self.training_config_name]
-
-        # store the category and check for compositeness
-        # self.training_category = self.config.categories.get(self.training_category_name)
-        # if self.training_category.x("composite", False) and \
-                # not self.allow_composite_training_category:
-            # raise Exception("training category '{}' is composite, prohibited by task {}".format(
-                # self.training_category.name, self))
-
         # save training features, without minimum feature score filtering applied
         self.training_features = [
             feature for feature in self.config.features
@@ -676,7 +700,6 @@ class BDTTrainingTask(ConfigTask):
         ]
 
         # compute the storage hash
-        # print(self.get_training_hash_data())
         self.training_hash = self.create_training_hash(**self.get_training_hash_data())
 
     def get_training_hash_data(self):
@@ -692,7 +715,6 @@ class BDTTraining(BDTTrainingTask):
     def __init__(self, *args, **kwargs):
         super(BDTTraining, self).__init__(*args, **kwargs)
         self.signal_dataset = self.config.datasets.get(self.signal_dataset_name)
-        # self.device = "GPU: 0" if self.use_gpu else "CPU: 0"
 
     def requires(self):
         return InputData.req(self, dataset_name=self.signal_dataset_name, file_index=0)
