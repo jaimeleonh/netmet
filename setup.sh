@@ -9,9 +9,10 @@ action() {
     cd nanoaod_base_analysis
     #local this_file="$( [ ! -z "$ZSH_VERSION" ] && echo "${(%):-%x}" || echo "${BASH_SOURCE[0]}" )"
     #local this_dir="$( cd "$( dirname "$this_file" )" && pwd )"
-    export CMT_BASE="DUMMY"
+    #export CMT_BASE="/vols/cms/jleonhol/netmet/nanoaod_base_analysis"
     #export CMT_BASE="/home/jleonhol/netmet/netmet/nanoaod_base_analysis"
     #export CMT_BASE="/home/hep/jleonhol/netmet/nanoaod_base_analysis"
+    export CMT_BASE="DUMMY"
     if [[ "$CMT_BASE" == "DUMMY" ]]; then
         echo "Need to change the path stored in CMT_BASE to the present folder (ending in nanoaod_base_analysis)"
         return "1"
@@ -220,6 +221,8 @@ action() {
             pip install fsspec-xrootd --no-cache-dir
             pip install cppyy --no-cache-dir
             pip install envyaml --no-cache-dir
+            pip install xgboost==1.7.5 --no-cache-dir
+            pip install conifer==1.5 --no-cache-dir
             cd "$origin"
         else
             cd "$CMT_SOFTWARE"
