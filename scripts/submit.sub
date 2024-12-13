@@ -1,0 +1,7 @@
+executable = /vols/cms/jleonhol/vivadotests/test.sh
+output = /vols/cms/jleonhol/vivadotests/logs/output
+error = /vols/cms/jleonhol/vivadotests/logs/errorfile
+log = /vols/cms/jleonhol/vivadotests/logs/log
++MaxRuntime = 6500
++lxfw = true
+queue

@@ -6,6 +6,9 @@ git clone https://github.com/jaimeleonh/netmet.git
 cd netmet
 git clone https://gitlab.cern.ch/cms-phys-ciemat/nanoaod_base_analysis.git --branch py3 nanoaod_base_analysis/
 git clone https://github.com/jaimeleonh/L1NetMET.git
+git clone https://github.com/Xilinx/HLS_arbitrary_Precision_Types.git
+git clone https://github.com/nlohmann/json.git
+wget https://raw.githubusercontent.com/fastmachinelearning/hls4ml-tutorial/refs/heads/main/plotting.py -O tasks/hls4ml_plotting.py
 source setup.sh  # to be run every time you open a new terminal
 voms-proxy-init -voms cms -valid 192:0   # to be run every time you open a new terminal
 law index --verbose  # to do only after installation or including a new task
@@ -36,10 +39,14 @@ Similarly, launching to htcondor is possible via `law run MLValidationWorkflow`.
 Analogous tasks are available, named `BDTTraining` and `BDTValidation`.
 
 
+## BDT synthesis
+Task is called `BDTSynthesis`, but can only be run in htcondor via `BDTSynthesisWorkflow` and by adding `--custom-condor-tag +lxfw=true` to the command
+
+
 ## Tips and tricks
 
 * When running the code on htcondor, logs can be dumped to a log file via --transfer-logs. If the job fails, it will point you to the file used for dumping the logs and errors. 
-* **Really important:** If running on htcondor w/o GPUs at IC, need to adid to the command `--custom-condor-tag requirements=has_avx`.
+* **Really important:** If running on htcondor w/o GPUs at IC, need to add to the command `--custom-condor-tag requirements=has_avx`.
 
 
 
