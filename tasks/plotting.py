@@ -34,8 +34,8 @@ from tasks.mlmet import MLTraining
 
 
 class BasePlotting(ConfigTask, law.LocalWorkflow, HTCondorWorkflow):
-    signal_dataset_name = luigi.Parameter(default="signal", description="name of the signal dataset, "
-        "default: signal")
+    signal_dataset_name = luigi.Parameter(default="signal_nopum_new", description="name of the signal dataset, "
+        "default: signal_nopum_new")
     background_dataset_name = luigi.Parameter(default="background", description="name of the "
         "background dataset, default: background")
     l1_met_threshold = luigi.IntParameter(default=80, description="value of the MET threshold, "
@@ -60,7 +60,7 @@ class BasePlotting(ConfigTask, law.LocalWorkflow, HTCondorWorkflow):
         # I don't really need it, it's just a placeholder
 
     def output(self):
-        return {
+        output = {
             key: {
                 "rate": self.local_target(f"rate.{key}"),
                 "resolution": self.local_target(f"resolution.{key}"),
@@ -72,6 +72,20 @@ class BasePlotting(ConfigTask, law.LocalWorkflow, HTCondorWorkflow):
                 "efficiency": self.local_target(f"efficiency.{key}"),
             } for key in ["pdf", "png"]
         }
+        
+        postfix = ""
+        output.update({
+            "x_rate": self.local_target(f"x_rate{postfix}.npy"),
+            "y_rate": self.local_target(f"y_rate{postfix}.npy"),
+            "x_resolution": self.local_target(f"x_resolution{postfix}.npy"),
+            "y_resolution": self.local_target(f"y_resolution{postfix}.npy"),
+            "x_dist": self.local_target(f"x_distributions{postfix}.pdf"),
+            "y_dist": self.local_target(f"y_distributions{postfix}.pdf"),
+            "x_efficiency": self.local_target(f"x_efficiency{postfix}.npy"),
+            "y_efficiency": self.local_target(f"y_efficiency{postfix}.npy"),
+            "y_error_efficiency": self.local_target(f"y_error_efficiency{postfix}.npy"),
+        })
+        return output
     
     def get_performance_plots(self, X, Y, X_train, Y_train, Xp, Xp_bkg):
         import utils.plotting as plotting
@@ -82,14 +96,14 @@ class BasePlotting(ConfigTask, law.LocalWorkflow, HTCondorWorkflow):
         # L1 MET rate #
         ###############
 
-        l1MET_bkg = Xp_bkg['methf_0_pt']
+        l1MET_bkg = Xp_bkg['methf_0_hwPt'] / 2.
 
         ax = plt.subplot()
         # rate plots must be in bins of GeV
         xrange = [0, 200]
         bins = xrange[1]
 
-        rateHist = plt.hist(l1MET_bkg, bins=bins, range=xrange, histtype='step', label='L1 MET Rate', cumulative=-1, log=True)
+        rateHist = plt.hist(l1MET_bkg, bins=bins, range=xrange, histtype='step', label='L1 MET Rate', cumulative=-1, log=True, weights=[1./l1MET_bkg.shape[0] for i in range(l1MET_bkg.shape[0])])
         plt.legend()
         ax.set_xlabel('MET $p_{T}$ [GeV]')
         ax.set_ylabel('Events')
@@ -97,23 +111,30 @@ class BasePlotting(ConfigTask, law.LocalWorkflow, HTCondorWorkflow):
         plt.savefig(create_file_dir(self.output()["png"]["rate"].path))
         plt.close('all')
 
-        # get rate at threshold
-        l1MET_fixed_rate = rateHist[0][int(self.l1_met_threshold) * int((xrange[1] / bins))]
+        with open(create_file_dir(self.output()["x_rate"].path), "wb+") as f:
+            np.save(f, rateHist[1])
+        with open(create_file_dir(self.output()["y_rate"].path), "wb+") as f:
+            np.save(f, rateHist[0])
 
         ##################
         # MET Resolution #
         ##################
 
-        l1MET = X['methf_0_pt']
+        l1MET = X['methf_0_hwPt'] / 2
         l1MET_test = l1MET.drop(X_train.index)
         puppiMETNoMu_df_test = Y.drop(X_train.index)
-        plt.hist((l1MET_test - puppiMETNoMu_df_test['PuppiMET_pt']), bins=80, range=[-120, 120], label="L1 MET Diff", histtype='step')
+        result = plt.hist((l1MET_test - puppiMETNoMu_df_test['PuppiMET_pt']), bins=80, range=[-120, 120], label="L1 MET Diff", histtype='step')
         ax.set_xlabel('$\Delta p_{T}$ [GeV]')
         ax.set_ylabel('Events / 3 GeV')
         plt.legend()
         plt.savefig(create_file_dir(self.output()["pdf"]["resolution"].path))
         plt.savefig(create_file_dir(self.output()["png"]["resolution"].path))
         plt.close('all')
+        
+        with open(create_file_dir(self.output()["x_resolution"].path), "wb+") as f:
+            np.save(f, result[1])
+        with open(create_file_dir(self.output()["y_resolution"].path), "wb+") as f:
+            np.save(f, result[0])
 
         #################
         # Distributions #
@@ -121,13 +142,18 @@ class BasePlotting(ConfigTask, law.LocalWorkflow, HTCondorWorkflow):
 
         ax = plt.subplot()
         plt.hist(puppiMETNoMu_df_test['PuppiMET_pt'], bins=100, range=[0, 200], histtype='step', log=True, label="PUPPI MET NoMu")
-        plt.hist(l1MET_test, bins=100, range=[0, 200], histtype='step', label="L1MET")
+        l1MET_hist = plt.hist(l1MET_test, bins=100, range=[0, 200], histtype='step', label="L1MET")
         ax.set_xlabel('MET $p_{T}$ [GeV]')
         ax.set_ylabel('Events / 2 GeV')
         plt.legend(fontsize=16)
         plt.savefig(create_file_dir(self.output()["pdf"]["dist"].path))
         plt.savefig(create_file_dir(self.output()["png"]["dist"].path))
         plt.close('all')
+
+        with open(create_file_dir(self.output()["x_dist"].path), "wb+") as f:
+            np.save(f, l1MET_hist[1])
+        with open(create_file_dir(self.output()["y_dist"].path), "wb+") as f:
+            np.save(f, l1MET_hist[0])
 
         import awkward as ak
 
@@ -178,16 +204,23 @@ class BasePlotting(ConfigTask, law.LocalWorkflow, HTCondorWorkflow):
         plt.savefig(create_file_dir(self.output()["png"]["efficiency"].path))
         plt.close('all')
 
+        with open(create_file_dir(self.output()["x_efficiency"].path), "wb+") as f:
+            np.save(f, xvals)
+        with open(create_file_dir(self.output()["y_efficiency"].path), "wb+") as f:
+            np.save(f, np.array(eff_data))
+        with open(create_file_dir(self.output()["y_error_efficiency"].path), "wb+") as f:
+            np.save(f, np.array(eff_errors))
+
     def run(self):
         from sklearn.preprocessing import StandardScaler
         import xgboost
 
-        self.feature_tag = "default"
+        self.feature_tag = "default_emu"
         feature_params = self.config.training_feature_groups()[self.feature_tag]
         scaleData = feature_params.get("scaleData", False)
         trainFrac = feature_params.get("trainFrac", 0.5)
 
-        X, Y = MLTraining.get_data(self, nfiles=200)
+        X, Y = MLTraining.get_data(self, nfiles=1)
 
         scaler = StandardScaler()
         if scaleData:
@@ -197,7 +230,9 @@ class BasePlotting(ConfigTask, law.LocalWorkflow, HTCondorWorkflow):
 
         Xp = X.drop(X_train.index)
 
-        Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=50)
+        #Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=100)
+        Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=1)
+
         if scaleData:
             Xp_bkg[Xp_bkg.columns] = pd.DataFrame(scaler.fit_transform(Xp_bkg))
 

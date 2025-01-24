@@ -6,13 +6,12 @@ training_workflow:
 
   # default values of training parameters
   defaults:
-    # training_category_name: vbf_common_os_even
-    # training_config_name: default
     feature_tag: default
     n_estimators: 10
     max_depth: 6
     objective: reg:linear
     random_seed: 1
+    signal_dataset_name: signal_nopum_new
     # config_name: base_2018
     # data_config_names: ["base_2016", "base_2017"]
     # skip_dataset_tags: ["other", "bsm"]
@@ -24,11 +23,21 @@ training_workflow:
   branches:
     0: {}
     1: {n_estimators: 20}
-    2: {feature_tag: eg}
-    3: {ref: 2, n_estimators: 20}
-    4: {ref: 1, max_depth: 4}
-    5: {ref: 1, feature_tag: default_saturated}
-    6: {ref: 0, max_depth: 4}
+    2: {n_estimators: 30}
+    3: {ref: 1, max_depth: 4}
+    4: {ref: 2, max_depth: 4}
+    5: {ref: 2, feature_tag: default_emu}
+    6: {ref: 2, max_depth: 10}
+    7: {ref: 2, max_depth: 8}
+    8: {ref: 2, objective: "reg:squaredlogerror"}
+    9: {n_estimators: 50, objective: "reg:squaredlogerror"}
+    10: {ref: 2, objective: custom_turnon_loss, feature_tag: default_emu}
+    11: {ref: 2, objective: custom_turnon_loss}
+    #2: {feature_tag: eg}
+    #3: {ref: 2, n_estimators: 20}
+    #4: {ref: 1, max_depth: 4}
+    #5: {ref: 1, feature_tag: default_saturated}
+    #6: {ref: 0, max_depth: 4}
     #2: {architecture: 128_128:relu}
     #3: {ref: 2, epochs: 100}
     #4: {ref: 2, epochs: 40}

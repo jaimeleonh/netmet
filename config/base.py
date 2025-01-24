@@ -79,6 +79,32 @@ class Config(cmt_config):
                     "/store/group/dpg_trigger/comm_trigger/L1Trigger/bundocka/Muon0/zmu24E_NetMET/240628_140553/0000/nano_290.root"
                 ]
             ),
+            Dataset("background_nopum",
+                folder="/eos/cms/store/group/dpg_trigger/comm_trigger/L1Trigger/"\
+                    "bundocka/ZeroBias/zb24I_PUMOff/241224_140730/0000/",
+                process=self.processes.get("background"),
+                check_empty=False,
+                prefix="eoscms.cern.ch/",
+            ),
+            Dataset("signal_nopum",
+                folder="/eos/cms/store/group/dpg_trigger/comm_trigger/L1Trigger/"\
+                    "bundocka/Muon0/zmu24I_PUMOff/241224_140801/0000/",
+                process=self.processes.get("signal"),
+                check_empty=False,
+                prefix="eoscms.cern.ch/",
+            ),
+             Dataset("background_nopum_new",
+                folder="/eos/user/b/bundocka/jec/zb24I_noJEC_noPUS_noPUM/",
+                process=self.processes.get("background"),
+                check_empty=False,
+                prefix="eosuser.cern.ch/",
+            ),
+            Dataset("signal_nopum_new",
+                folder="/eos/user/b/bundocka/jec/zmu24I_noJEC_noPUS_noPUM/",
+                process=self.processes.get("signal"),
+                check_empty=False,
+                prefix="eosuser.cern.ch/",
+            ),
         ]
         return ObjectCollection(datasets)
 
@@ -112,6 +138,12 @@ class Config(cmt_config):
                 "inputs": ["Jet"],
                 "inputSums": ["methf", "ntt"],
                 "nObj": 4
+            },
+            "default_emu": {
+                "inputs": ["Jet"],
+                "inputSums": ["methf", "ntt"],
+                "nObj": 4,
+                "useEmu": True,
             },
             "default_saturated": {
                 "inputs": ["Jet"],

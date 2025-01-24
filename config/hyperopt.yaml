@@ -8,6 +8,7 @@ training_workflow:
   defaults:
     # training_category_name: vbf_common_os_even
     # training_config_name: default
+    signal_dataset_name: signal_nopum_new
     feature_tag: default
     architecture: 32_32:relu
     loss_name: mean_absolute_percentage_error
