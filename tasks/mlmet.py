@@ -194,7 +194,7 @@ class MLTraining(MLTrainingTask):
         return model
 
     def get_data(self, dataset=None, output_y=True, output_df=False, nfiles=-1, min_puppi_pt=-1,
-            remove_saturated=False, useEmu=None):
+            remove_saturated=False, useEmu=None, remove_zero_met=False):
         import utils.tools as tools
 
         if not dataset:
@@ -208,8 +208,9 @@ class MLTraining(MLTrainingTask):
             useEmu = feature_params.get("useEmu", False)
         useMP = feature_params.get("useMP", False)
         keepStruct = feature_params.get("keepStruct", False)
+        useSumPhi = feature_params.get("useSumPhi", False)
 
-        branches = tools.getBranches(inputs, useEmu, useMP)
+        branches = tools.getBranches(inputs, useEmu, useMP, useSumPhi)
 
         if nfiles != -1:
             dataset_files = dataset.get_files(
@@ -219,6 +220,9 @@ class MLTraining(MLTrainingTask):
                 os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)
             # os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)[0:2]
         data = tools.getArrays(dataset_files, branches, len(dataset_files), None)
+
+        # if remove_zero_met:
+            # data = data[data["methf_0_hwPt"] != 0]
 
         if output_y:
             puppiMET, puppiMET_noMu = tools.getPUPPIMET(data)
@@ -641,8 +645,10 @@ class BDTTrainingTask(ConfigTask):
         "the loss function, default: neg_mean_absolute_error")
     random_seed = luigi.IntParameter(default=1, description="random seed for weight "
         "initialization, 0 means non-deterministic, default: 1")
-    signal_dataset_name = luigi.Parameter(default="signal_nopum_new", description="name of the signal dataset, "
-        "default: signal_nopum_new")
+    signal_dataset_name = luigi.Parameter(default="signal_nopum_new", description="name of the "
+        "signal dataset, default: signal_nopum_new")
+    ratio = luigi.BoolParameter(default=False, description="whether to regress to "
+        "the ratio PUPPI MET / L1 MET, default: False")
 
     training_id = luigi.IntParameter(default=law.NO_INT, description="when given, overwrite "
         "training parameters from the training with this branch in the training_workflow_file, "
@@ -653,7 +659,8 @@ class BDTTrainingTask(ConfigTask):
         "jobs to a gpu, default: False")
 
     training_hash_params = [
-        "feature_tag", "n_estimators", "max_depth", "objective", "random_seed", "signal_dataset_name",
+        "feature_tag", "n_estimators", "max_depth", "objective", "random_seed",
+        "signal_dataset_name", "ratio"
         # "training_category_name", "training_config_name", "l2_norm", "event_weights",
     ]
 
@@ -698,6 +705,7 @@ class BDTTrainingTask(ConfigTask):
             fmt("objective", "OBJ", lambda v: v.replace(":", "_")),
             fmt("random_seed", "RS", int),
             fmt("signal_dataset_name", "SIG", str),
+            fmt("ratio", "RATIO", int),
         ]
         return "__".join(part for part in parts if part)
 
@@ -740,9 +748,15 @@ class BDTTraining(BDTTrainingTask):
 
     def generate_model(self):
         import xgboost
+
         def custom_turnon_loss(y_pred, y_val):
-            grad = np.where(np.logical_or(y_val < 50, y_val > 180), (y_val-y_pred) ** 2, (y_val-y_pred) ** 4)
-            hess = np.where(np.logical_or(y_val < 50, y_val > 180), 2 * (y_val-y_pred), 4 * (y_val-y_pred) ** 3)
+            grad = 4 * (y_val - y_pred) ** 3
+            hess = 12 * (y_val - y_pred) ** 2
+            return grad, hess
+
+        def custom_mega_loss(y_pred, y_val):
+            grad = 6 * (y_val - y_pred) ** 5
+            hess = 30 * (y_val - y_pred) ** 4
             return grad, hess
 
         objective = self.objective
@@ -763,8 +777,13 @@ class BDTTraining(BDTTrainingTask):
         remove_saturated = feature_params.get("remove_saturated", False)
 
         X, Y = MLTraining.get_data(self, nfiles=-1, min_puppi_pt=min_puppi_pt,
-            remove_saturated=remove_saturated)
+            remove_saturated=remove_saturated, remove_zero_met=self.ratio)
         # X, Y = MLTraining.get_data(self, nfiles=2)
+
+        if self.ratio:
+            X = X[X["methf_0_hwPt"] > 0]
+            Y = Y.loc[X.index]
+            Y["PuppiMET_pt"] = Y["PuppiMET_pt"].divide(X["methf_0_hwPt"], fill_value=-1)
 
         scaler = StandardScaler()
         if scaleData:
@@ -837,7 +856,7 @@ class BDTValidation(BaseValidationTask, BDTTraining):
         trainFrac = feature_params.get("trainFrac", 0.5)
 
         # X, Y = MLTraining.get_data(self, nfiles=50)
-        X, Y = MLTraining.get_data(self, nfiles=-1)
+        X, Y = MLTraining.get_data(self, nfiles=-1)        
         # X, Y = MLTraining.get_data(self, nfiles=2)
 
         scaler = StandardScaler()
@@ -854,6 +873,8 @@ class BDTValidation(BaseValidationTask, BDTTraining):
         model.load_model(modelFile)
 
         Yp = model.predict(Xp)
+        if self.ratio:
+            Yp = np.multiply(Yp, Xp["methf_0_hwPt"].to_numpy())
 
         Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=100)
         # Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=1)
@@ -861,6 +882,8 @@ class BDTValidation(BaseValidationTask, BDTTraining):
             Xp_bkg[Xp_bkg.columns] = pd.DataFrame(scaler.fit_transform(Xp_bkg))
 
         Yp_bkg = model.predict(Xp_bkg)
+        if self.ratio:
+            Yp_bkg = np.multiply(Yp_bkg, Xp_bkg["methf_0_hwPt"].to_numpy())
 
         X_bkg_ref = ""
         if self.reference_background_dataset_name:
@@ -1076,6 +1099,9 @@ class BaseComparisonTask():
     def get_comparison_plots(self, inputs):
         from matplotlib import pyplot as plt
 
+        params = self.requires().get_branch_map()
+        print(params)
+
         # Rate, resolution, and distributions
         x_labels = {
             "rate": "L1 NET MET [GeV]",
@@ -1094,7 +1120,10 @@ class BaseComparisonTask():
                     # print(y)
                 if plot == "resolution":
                     y /= sum(y)
-                plt.stairs(y, x, label=f"Branch {key}")
+                label = f"Branch {key}"
+                if self.requires().get_branch_map()[key]["label"] != "default":
+                    label = self.requires().get_branch_map()[key]["label"]
+                plt.stairs(y, x, label=label)
             ax.set_xlabel(x_labels[plot])
             ax.set_ylabel('Events')
             plt.legend()
@@ -1114,10 +1143,13 @@ class BaseComparisonTask():
                 y_errors = np.load(f)
             with open(vals[f'netMET_thresh'].path, 'r') as f:
                 netMET_thresh = f.readlines()[0].strip()
-            plt.errorbar(x, y, y_errors, label=f"Branch {key}, L1 NETMET > " + str(netMET_thresh),
+            label = f"Branch {key}"
+            if self.requires().get_branch_map()[key]["label"] != "default":
+                label = self.requires().get_branch_map()[key]["label"]
+            plt.errorbar(x, y, y_errors, label=f"{label}, L1 NETMET > " + str(netMET_thresh),
                 marker='o', capsize=7, linestyle='none')
-            print(key)
-            print(y)
+            #print(key)
+            #print(y)
         ax.set_xlabel('PUPPI MET No Mu [GeV]')
         ax.set_ylabel('Efficiency')
         plt.legend()

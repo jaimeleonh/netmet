@@ -6,12 +6,14 @@ training_workflow:
 
   # default values of training parameters
   defaults:
+    label: none
     feature_tag: default
     n_estimators: 10
     max_depth: 6
     objective: reg:linear
     random_seed: 1
     signal_dataset_name: signal_nopum_new
+    ratio: False
     # config_name: base_2018
     # data_config_names: ["base_2016", "base_2017"]
     # skip_dataset_tags: ["other", "bsm"]
@@ -23,16 +25,24 @@ training_workflow:
   branches:
     0: {}
     1: {n_estimators: 20}
-    2: {n_estimators: 30}
+    2: {n_estimators: 30, label: "Default"}
     3: {ref: 1, max_depth: 4}
     4: {ref: 2, max_depth: 4}
-    5: {ref: 2, feature_tag: default_emu}
+    5: {ref: 2, feature_tag: default_emu, label: "Default (No PUM)"}
     6: {ref: 2, max_depth: 10}
     7: {ref: 2, max_depth: 8}
     8: {ref: 2, objective: "reg:squaredlogerror"}
     9: {n_estimators: 50, objective: "reg:squaredlogerror"}
     10: {ref: 2, objective: custom_turnon_loss, feature_tag: default_emu}
     11: {ref: 2, objective: custom_turnon_loss}
+    12: {ref: 2, objective: custom_mega_loss}
+    13: {ref: 2, objective: "reg:absoluteerror"}
+    14: {ref: 2, ratio: True}
+    15: {ref: 2, feature_tag: eg}
+    16: {ref: 2, feature_tag: hf}
+    17: {feature_tag: hf, label: "Default + MHT pt"}
+    18: {ref:2, feature_tag: phi, label: "Default + L1 MET phi"}
+    19: {feature_tag: hf_phi, label: "Default + MHT (pt & phi)"}
     #2: {feature_tag: eg}
     #3: {ref: 2, n_estimators: 20}
     #4: {ref: 1, max_depth: 4}

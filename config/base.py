@@ -155,7 +155,24 @@ class Config(cmt_config):
                 "inputs": ["Jet", "EG"],
                 "inputSums": ["methf", "ntt"],
                 "nObj": 4
-            }
+            },
+            "hf": {
+                "inputs": ["Jet"],
+                "inputSums": ["methf", "mhthf", "ntt"],
+                "nObj": 4
+            },
+            "phi": {
+                "inputs": ["Jet"],
+                "inputSums": ["methf", "ntt"],
+                "nObj": 4,
+                "useSumPhi": True
+            },
+            "hf_phi": {
+                "inputs": ["Jet"],
+                "inputSums": ["methf", "mhthf", "ntt"],
+                "nObj": 4,
+                "useSumPhi": True
+            },
         }
 
 # config = Config("base", year=2018, ecm=13, lumi_pb=59741)
