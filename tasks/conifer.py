@@ -8,8 +8,8 @@ from tasks.mlmet import MLTraining, BDTTraining, BDTTrainingWorkflow, BDTValidat
 
 
 class BDTConiferCompilation(BDTTraining):
-    precision = luigi.Parameter(default="ap_fixed<10,3>", description="precision to be used in "
-        "conifer, default: ap_fixed<10,3>")
+    precision = luigi.Parameter(default="ap_fixed<24,16>", description="precision to be used in "
+        "conifer, default: ap_fixed<24,16>")
 
     def requires(self):
         return BDTTraining.vreq(self)
@@ -287,3 +287,91 @@ class BDTConiferComparison(BDTConiferValidation):
 class BDTConiferComparisonWorkflow(BDTTrainingWorkflow):
     def requires(self):
         return BDTConiferComparison.vreq(self, **self.matching_branch_data(BDTConiferComparison))
+
+
+class BDTConiferEmulatorComparison(BDTConiferComparison):
+    dataset_name = luigi.Parameter(default="signal_nopum_new", description="name of the signal dataset, "
+        "default: signal_nopum_new")
+    def requires(self):
+        return {
+            "hls": BDTConiferCompilation.vreq(self),
+        }
+
+    def run(self):
+        from sklearn.preprocessing import StandardScaler
+        import xgboost
+        import conifer
+        from scipy.special import expit
+        from matplotlib import pyplot as plt
+
+        self.precision = self.requires()["hls"].precision
+
+        os.environ['PATH'] = '/opt/local/Vitis_HLS/2024.1/bin:' + os.environ['PATH']
+        os.environ["XILINX_AP_INCLUDE"] = os.path.join(os.path.expandvars("$CMT_BASE"),
+            "../HLS_arbitrary_Precision_Types/include/")
+        os.environ["JSON_ROOT"] = os.path.join(os.path.expandvars("$CMT_BASE"), "../json/include")
+
+        # os.environ['PATH'] = '/opt/local/Vitis_HLS/2024.1/bin:' + os.environ['PATH']
+        # os.environ["XILINX_AP_INCLUDE"] = os.path.join(os.path.expandvars("$CMT_BASE"),
+            # "../HLS_arbitrary_Precision_Types/include/")
+        # os.environ["JSON_ROOT"] = os.path.join(os.path.expandvars("$CMT_BASE"), "../json/include")
+        
+        #self.feature_tag = "hf_emu"
+        feature_params = self.config.training_feature_groups()[self.feature_tag]
+        scaleData = feature_params.get("scaleData", False)
+        trainFrac = feature_params.get("trainFrac", 0.5)
+
+        X, Y = MLTraining.get_data(self, nfiles=-1, dataset=self.config.datasets.get(self.dataset_name))
+        # X, Y = MLTraining.get_data(self, nfiles=2)
+
+        # predict values for efficiency - Conifer model
+        modelFile = self.input()["hls"]["model"].path
+        cnf_model_hls = conifer.model.load_model(os.path.join(self.input()["hls"]["model"].path, "my_prj.json"))
+        cnf_model_hls.compile()
+
+        Yp = cnf_model_hls.decision_function(X.to_numpy())
+        Yp_hls = Yp.reshape(-1)
+
+
+        Yp_hls_int = Yp_hls.astype(int)
+
+        # extract values from the ntuple
+        self.feature_tag = "metnohf"
+        Xp_metnohf, _ = MLTraining.get_data(self, nfiles=-1, output_y=False,
+            dataset=self.config.datasets.get(self.dataset_name))
+
+        # print(Xp_metnohf.shape, Yp_hls.shape)
+        #print(Xp_metnohf.iloc[132], Yp_hls)
+        
+        # print(Xp_metnohf["met_0_hwPt"][0], Yp_hls[0])
+
+        # print(type(X), type(Yp_hls))
+
+        l1MET_diff = Xp_metnohf["met_0_hwPt"] - Yp_hls_int
+        
+        # print(Xp_metnohf["met_0_hwPt"])
+        # print(Yp_hls)
+        # print(l1MET_diff)
+        #print(l1MET_diff[l1MET_diff != 0])
+        
+        # for elem in X.iterrows():
+            # for val in elem:
+                # print(val, end=" ")
+
+        plt.hist(l1MET_diff, bins=41, range=[-20.5, 20.5], label=f"L1 NetMET (Emulator - python)",
+            histtype='step')
+        plt.xlabel(f"L1 NetMET (Emulator - python) [GeV]")
+        plt.savefig(create_file_dir(self.output()["diff"].path))
+        plt.close('all')
+
+        plt.hist(l1MET_diff, bins=41, range=[-20.5, 20.5], label=f"L1 NetMET (Emulator - python)",
+            histtype='step', log=True)
+        plt.xlabel(f"L1 NetMET (Emulator - python) [GeV]")
+        plt.savefig(create_file_dir(self.output()["diff_log"].path))
+        plt.close('all')
+
+
+class BDTConiferEmulatorComparisonWorkflow(BDTConiferComparisonWorkflow):
+    
+    def requires(self):
+        return BDTConiferEmulatorComparison.vreq(self, **self.matching_branch_data(BDTConiferEmulatorComparison))

@@ -93,7 +93,7 @@ class Config(cmt_config):
                 check_empty=False,
                 prefix="eoscms.cern.ch/",
             ),
-             Dataset("background_nopum_new",
+            Dataset("background_nopum_new",
                 folder="/eos/user/b/bundocka/jec/zb24I_noJEC_noPUS_noPUM/",
                 process=self.processes.get("background"),
                 check_empty=False,
@@ -105,6 +105,46 @@ class Config(cmt_config):
                 check_empty=False,
                 prefix="eosuser.cern.ch/",
             ),
+
+            Dataset("background_con",
+                folder="/eos/cms/store/group/dpg_trigger/comm_trigger/L1Trigger/bundocka/metzs/zb_con/",
+                process=self.processes.get("background"),
+                check_empty=False,
+                prefix="eoscms.cern.ch/",
+            ),
+            Dataset("signal_con",
+                folder="/eos/cms/store/group/dpg_trigger/comm_trigger/L1Trigger/bundocka/metzs/zmu_con/",
+                process=self.processes.get("signal"),
+                check_empty=False,
+                prefix="eoscms.cern.ch/",
+            ),
+
+            Dataset("background_pumOff",
+                folder="/eos/cms/store/group/dpg_trigger/comm_trigger/L1Trigger/bundocka/metzs/zb_pumOff/",
+                process=self.processes.get("background"),
+                check_empty=False,
+                prefix="eoscms.cern.ch/",
+            ),
+            Dataset("signal_pumOff",
+                folder="/eos/cms/store/group/dpg_trigger/comm_trigger/L1Trigger/bundocka/metzs/zmu_pumOff/",
+                process=self.processes.get("signal"),
+                check_empty=False,
+                prefix="eoscms.cern.ch/",
+            ),
+
+            Dataset("muon_jaime",
+                dataset="/Muon1/jleonhol-v2-00000000000000000000000000000000/USER",
+                process=self.processes.get("signal"),
+                check_empty=False,
+                prefix="gfe02.grid.hep.ph.ic.ac.uk/pnfs/hep.ph.ic.ac.uk/data/cms",
+            ),
+
+            Dataset("test_jaime",
+                folder="/vols/cms/jleonhol/netmet/samples/test_2703/",
+                process=self.processes.get("signal"),
+                check_empty=False,
+            ),
+
         ]
         return ObjectCollection(datasets)
 
@@ -139,6 +179,12 @@ class Config(cmt_config):
                 "inputSums": ["methf", "ntt"],
                 "nObj": 4
             },
+            "metnohf": {
+                "inputs": [],
+                "inputSums": ["met"],
+                "nObj": 0,
+                "useEmu": True,
+            },
             "default_emu": {
                 "inputs": ["Jet"],
                 "inputSums": ["methf", "ntt"],
@@ -160,6 +206,12 @@ class Config(cmt_config):
                 "inputs": ["Jet"],
                 "inputSums": ["methf", "mhthf", "ntt"],
                 "nObj": 4
+            },
+            "hf_emu": {
+                "inputs": ["Jet"],
+                "inputSums": ["methf", "mhthf", "ntt"],
+                "nObj": 4,
+                "useEmu": True,
             },
             "phi": {
                 "inputs": ["Jet"],

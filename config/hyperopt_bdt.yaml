@@ -43,6 +43,10 @@ training_workflow:
     17: {feature_tag: hf, label: "Default + MHT pt"}
     18: {ref:2, feature_tag: phi, label: "Default + L1 MET phi"}
     19: {feature_tag: hf_phi, label: "Default + MHT (pt & phi)"}
+    20: {ref: 17, feature_tag: hf_emu, signal_dataset_name: signal_con}
+    21: {ref: 17, feature_tag: hf_emu, signal_dataset_name: signal_pumOff}
+    
+    
     #2: {feature_tag: eg}
     #3: {ref: 2, n_estimators: 20}
     #4: {ref: 1, max_depth: 4}

@@ -194,7 +194,7 @@ class MLTraining(MLTrainingTask):
         return model
 
     def get_data(self, dataset=None, output_y=True, output_df=False, nfiles=-1, min_puppi_pt=-1,
-            remove_saturated=False, useEmu=None, remove_zero_met=False):
+            remove_saturated=False, useEmu=None, remove_zero_met=False, output_phi=False):
         import utils.tools as tools
 
         if not dataset:
@@ -219,13 +219,16 @@ class MLTraining(MLTrainingTask):
             dataset_files = dataset.get_files(
                 os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)
             # os.path.expandvars("$CMT_TMP_DIR/%s/" % self.config_name), check_empty=True)[0:2]
+        
+        print(dataset_files)
+        
         data = tools.getArrays(dataset_files, branches, len(dataset_files), None)
 
         # if remove_zero_met:
             # data = data[data["methf_0_hwPt"] != 0]
 
         if output_y:
-            puppiMET, puppiMET_noMu = tools.getPUPPIMET(data)
+            puppiMET, puppiMET_noMu = tools.getPUPPIMET(data, output_phi=output_phi)
             if min_puppi_pt > -1:
                 data, puppiMET_noMu = tools.apply_pt_cut(data, puppiMET_noMu, min_puppi_pt)
             puppiMETNoMu_df = tools.arrayToDataframe(puppiMET_noMu, 'puppiMET_noMu', None)
@@ -284,7 +287,6 @@ class MLTraining(MLTrainingTask):
             plt.xlabel('Epoch')
             plt.legend()
             plt.savefig(create_file_dir(self.output()["acc"].path))
-
 
 
 class MLTrainingWorkflowBase(ConfigTask, law.LocalWorkflow, HTCondorWorkflow, SGEWorkflow, SlurmWorkflow):
@@ -764,7 +766,7 @@ class BDTTraining(BDTTrainingTask):
             objective = eval(self.objective)
 
         return xgboost.XGBRegressor(objective=objective, n_estimators=self.n_estimators,
-            seed=self.random_seed, max_depth=self.max_depth)
+            seed=self.random_seed, max_depth=self.max_depth, multi_strategy="multi_output_tree")
 
     def run(self):
         from sklearn.preprocessing import StandardScaler
@@ -776,8 +778,8 @@ class BDTTraining(BDTTrainingTask):
         min_puppi_pt = feature_params.get("min_puppi_pt", -1)
         remove_saturated = feature_params.get("remove_saturated", False)
 
-        X, Y = MLTraining.get_data(self, nfiles=-1, min_puppi_pt=min_puppi_pt,
-            remove_saturated=remove_saturated, remove_zero_met=self.ratio)
+        X, Y = MLTraining.get_data(self, nfiles=2, min_puppi_pt=min_puppi_pt,
+            remove_saturated=remove_saturated, remove_zero_met=self.ratio, output_phi=True)
         # X, Y = MLTraining.get_data(self, nfiles=2)
 
         if self.ratio:
@@ -856,8 +858,10 @@ class BDTValidation(BaseValidationTask, BDTTraining):
         trainFrac = feature_params.get("trainFrac", 0.5)
 
         # X, Y = MLTraining.get_data(self, nfiles=50)
-        X, Y = MLTraining.get_data(self, nfiles=-1)        
-        # X, Y = MLTraining.get_data(self, nfiles=2)
+        #X, Y = MLTraining.get_data(self, nfiles=-1)
+        X, Y = MLTraining.get_data(self, nfiles=2)
+        # remove hardware scaling
+        Y["PuppiMET_pt"] /= 2
 
         scaler = StandardScaler()
         if scaleData:
@@ -873,15 +877,35 @@ class BDTValidation(BaseValidationTask, BDTTraining):
         model.load_model(modelFile)
 
         Yp = model.predict(Xp)
+        print(Yp)
+        import sys
+        sys.exit()
+        # Get pt only if needed
+        if len(Yp.shape) > 1:
+            if Yp.shape[1] > 1:
+                Yp = Yp[:, 1]
+
+        # and move from hw to final units
+        Yp = Yp / 2.
+
         if self.ratio:
             Yp = np.multiply(Yp, Xp["methf_0_hwPt"].to_numpy())
 
         Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=100)
-        # Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=1)
+        #Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=1)
         if scaleData:
             Xp_bkg[Xp_bkg.columns] = pd.DataFrame(scaler.fit_transform(Xp_bkg))
 
         Yp_bkg = model.predict(Xp_bkg)
+
+        # Get pt only if needed
+        if len(Yp_bkg.shape) > 1:
+            if Yp_bkg.shape[1] > 1:
+                Yp_bkg = Yp_bkg[:, 1]
+
+        # and move from hw to final units
+        Yp_bkg = Yp_bkg / 2.
+
         if self.ratio:
             Yp_bkg = np.multiply(Yp_bkg, Xp_bkg["methf_0_hwPt"].to_numpy())
 

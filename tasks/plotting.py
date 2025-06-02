@@ -220,7 +220,7 @@ class BasePlotting(ConfigTask, law.LocalWorkflow, HTCondorWorkflow):
         scaleData = feature_params.get("scaleData", False)
         trainFrac = feature_params.get("trainFrac", 0.5)
 
-        X, Y = MLTraining.get_data(self, nfiles=1)
+        X, Y = MLTraining.get_data(self, nfiles=100)
 
         scaler = StandardScaler()
         if scaleData:
@@ -230,8 +230,8 @@ class BasePlotting(ConfigTask, law.LocalWorkflow, HTCondorWorkflow):
 
         Xp = X.drop(X_train.index)
 
-        #Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=100)
-        Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=1)
+        Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=100)
+        #Xp_bkg, _ = MLTraining.get_data(self, self.background_dataset, output_y=False, nfiles=1)
 
         if scaleData:
             Xp_bkg[Xp_bkg.columns] = pd.DataFrame(scaler.fit_transform(Xp_bkg))
