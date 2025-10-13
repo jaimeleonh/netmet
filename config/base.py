@@ -145,6 +145,53 @@ class Config(cmt_config):
                 check_empty=False,
             ),
 
+            Dataset("test_muon25C",
+                folder="/vols/cms/jleonhol/netmet/samples/muon25C/",
+                process=self.processes.get("signal"),
+                check_empty=False,
+            ),
+
+            Dataset("test_muon25C_emu_nocor",
+                folder="/vols/cms/jleonhol/netmet/samples/muon25C_emu_nocor/",
+                process=self.processes.get("signal"),
+                check_empty=False,
+            ),
+
+            Dataset("test_muon25C_emu_v0p3",
+                folder="/vols/cms/jleonhol/netmet/samples/muon25C_v0p3/",
+                process=self.processes.get("signal"),
+                check_empty=False,
+            ),
+
+            # 2025
+            Dataset("muon_2025c",
+                folder="/eos/cms/store/group/dpg_trigger/comm_trigger/L1Trigger/sedurgut/Muon0/zmu_Run2025C_RAWRECO_5/",
+                process=self.processes.get("signal"),
+                check_empty=False,
+                prefix="eoscms.cern.ch/",
+            ),
+
+            Dataset("muon_2025f",
+                folder="/eos/cms/store/group/dpg_trigger/comm_trigger/L1Trigger/sedurgut/Muon0/zmu_Run2025F/",
+                process=self.processes.get("signal"),
+                check_empty=False,
+                prefix="eoscms.cern.ch/",
+            ),
+
+            Dataset("zb_2025c",
+                folder="/eos/cms/store/group/dpg_trigger/comm_trigger/L1Trigger/sedurgut/ZeroBias/zb25C-v1/",
+                process=self.processes.get("background"),
+                check_empty=False,
+                prefix="eoscms.cern.ch/",
+            ),
+
+            Dataset("zb_2025f",
+                folder="/eos/cms/store/group/dpg_trigger/comm_trigger/L1Trigger/sedurgut/ZeroBias/zb25F/",
+                process=self.processes.get("background"),
+                check_empty=False,
+                prefix="eoscms.cern.ch/",
+            ),
+
         ]
         return ObjectCollection(datasets)
 
@@ -213,6 +260,11 @@ class Config(cmt_config):
                 "nObj": 4,
                 "useEmu": True,
             },
+            "hf_nontt": {
+                "inputs": ["Jet"],
+                "inputSums": ["methf", "mhthf"],
+                "nObj": 4
+            },
             "phi": {
                 "inputs": ["Jet"],
                 "inputSums": ["methf", "ntt"],
@@ -224,6 +276,11 @@ class Config(cmt_config):
                 "inputSums": ["methf", "mhthf", "ntt"],
                 "nObj": 4,
                 "useSumPhi": True
+            },
+            "vae": {
+                "inputs": ["Jet", "EG", "Muon"],
+                "inputSums": ["methf", "mhthf"],
+                "nObj": 6,
             },
         }
 

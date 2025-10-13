@@ -41,10 +41,15 @@ training_workflow:
     15: {ref: 2, feature_tag: eg}
     16: {ref: 2, feature_tag: hf}
     17: {feature_tag: hf, label: "Default + MHT pt"}
-    18: {ref:2, feature_tag: phi, label: "Default + L1 MET phi"}
+    18: {ref: 2, feature_tag: phi, label: "Default + L1 MET phi"}
     19: {feature_tag: hf_phi, label: "Default + MHT (pt & phi)"}
     20: {ref: 17, feature_tag: hf_emu, signal_dataset_name: signal_con}
     21: {ref: 17, feature_tag: hf_emu, signal_dataset_name: signal_pumOff}
+    22: {feature_tag: hf_nontt, label: "Default + MHT pt (No NTT)"}
+    23: {feature_tag: hf_emu, label: "Default + MHT pt (reemulated)"}
+    #23: {feature_tag: vae, signal_dataset_name: background_nopum_new}
+    24: {ref: 17, signal_dataset_name: muon_2025c}
+    25: {ref: 17, signal_dataset_name: muon_2025f}
     
     
     #2: {feature_tag: eg}

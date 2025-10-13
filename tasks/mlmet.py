@@ -211,6 +211,7 @@ class MLTraining(MLTrainingTask):
         useSumPhi = feature_params.get("useSumPhi", False)
 
         branches = tools.getBranches(inputs, useEmu, useMP, useSumPhi)
+        print(branches)
 
         if nfiles != -1:
             dataset_files = dataset.get_files(
@@ -778,7 +779,7 @@ class BDTTraining(BDTTrainingTask):
         min_puppi_pt = feature_params.get("min_puppi_pt", -1)
         remove_saturated = feature_params.get("remove_saturated", False)
 
-        X, Y = MLTraining.get_data(self, nfiles=2, min_puppi_pt=min_puppi_pt,
+        X, Y = MLTraining.get_data(self, nfiles=-1, min_puppi_pt=min_puppi_pt,
             remove_saturated=remove_saturated, remove_zero_met=self.ratio, output_phi=True)
         # X, Y = MLTraining.get_data(self, nfiles=2)
 
@@ -858,10 +859,11 @@ class BDTValidation(BaseValidationTask, BDTTraining):
         trainFrac = feature_params.get("trainFrac", 0.5)
 
         # X, Y = MLTraining.get_data(self, nfiles=50)
-        #X, Y = MLTraining.get_data(self, nfiles=-1)
-        X, Y = MLTraining.get_data(self, nfiles=2)
+        X, Y = MLTraining.get_data(self, nfiles=-1)
+        # X, Y = MLTraining.get_data(self, nfiles=2)
+
         # remove hardware scaling
-        Y["PuppiMET_pt"] /= 2
+        Y["PuppiMET_pt"] /= 2.
 
         scaler = StandardScaler()
         if scaleData:
@@ -877,16 +879,14 @@ class BDTValidation(BaseValidationTask, BDTTraining):
         model.load_model(modelFile)
 
         Yp = model.predict(Xp)
-        print(Yp)
-        import sys
-        sys.exit()
+
         # Get pt only if needed
         if len(Yp.shape) > 1:
             if Yp.shape[1] > 1:
                 Yp = Yp[:, 1]
 
         # and move from hw to final units
-        Yp = Yp / 2.
+        Yp /= 2.
 
         if self.ratio:
             Yp = np.multiply(Yp, Xp["methf_0_hwPt"].to_numpy())
@@ -904,7 +904,7 @@ class BDTValidation(BaseValidationTask, BDTTraining):
                 Yp_bkg = Yp_bkg[:, 1]
 
         # and move from hw to final units
-        Yp_bkg = Yp_bkg / 2.
+        Yp_bkg /= 2.
 
         if self.ratio:
             Yp_bkg = np.multiply(Yp_bkg, Xp_bkg["methf_0_hwPt"].to_numpy())
@@ -1074,36 +1074,52 @@ class BDTInputPrinter(BDTTrainingTask):
 
     def output(self):
         return {
-            "x_train": self.local_target("x_train.npy"),
-            "y_train": self.local_target("y_train.npy"),
-            "x_valid": self.local_target("x_valid.npy"),
-            "y_valid": self.local_target("y_valid.npy"),
+            "npy": {
+                "x_train": self.local_target("x_train.npy"),
+                "y_train": self.local_target("y_train.npy"),
+                "x_valid": self.local_target("x_valid.npy"),
+                "y_valid": self.local_target("y_valid.npy"),
+            },
+            "csv": {
+                "x_train": self.local_target("x_train.csv"),
+                "y_train": self.local_target("y_train.csv"),
+                "x_valid": self.local_target("x_valid.csv"),
+                "y_valid": self.local_target("y_valid.csv"),
+            }
         }
 
     def run(self):
         from sklearn.preprocessing import StandardScaler
 
         feature_params = self.config.training_feature_groups()[self.feature_tag]
-        trainFrac = feature_params.get("trainFrac", 0.5)
+        trainFrac = feature_params.get("trainFrac", 1.0)
         scaleData = feature_params.get("scaleData", False)
         min_puppi_pt = feature_params.get("min_puppi_pt", -1)
 
         #X, Y = MLTraining.get_data(self, nfiles=-1, min_puppi_pt=min_puppi_pt)
-        X, Y = MLTraining.get_data(self, nfiles=2)
+        X, Y = MLTraining.get_data(self, nfiles=1, output_y=False,)
 
         scaler = StandardScaler()
         if scaleData:
             X[X.columns] = pd.DataFrame(scaler.fit_transform(X))
-        x_train = X.sample(frac=trainFrac, random_state=3).dropna()
-        y_train = Y.loc[x_train.index]
+        x_train = X
+        # x_train = X.sample(frac=trainFrac, random_state=3).dropna()
+        #y_train = Y.loc[x_train.index]
 
         x_valid = X.drop(x_train.index)
-        y_valid = Y.drop(y_train.index)
+        #y_valid = Y.drop(y_train.index)
+
+        print(x_train)
 
         outputs = self.output()
-        for cat in ["x_train", "y_train", "x_valid", "y_valid"]:
-            with open(create_file_dir(outputs[cat].path), "wb+") as f:
+        for cat in ["x_train"]:
+        # for cat in ["x_train", "y_train", "x_valid", "y_valid"]:
+            with open(create_file_dir(outputs["npy"][cat].path), "wb+") as f:
                 np.save(f, eval(cat))
+
+            import pandas as pd 
+            df = pd.DataFrame(eval(cat))
+            df.to_csv(create_file_dir(outputs["csv"][cat].path), header=False, index=False)
 
 
 class BaseComparisonTask():

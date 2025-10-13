@@ -46,6 +46,7 @@ class BDTConiferCompilation(BDTTraining):
 
         cfg_hls = conifer.backends.xilinxhls.auto_config()
         cfg_hls['OutputDir'] = '%s' % (modelDir)
+        cfg_hls['ProjectName'] = 'nn_met_calib'
         create_file_dir(cfg_hls['OutputDir'])
         # cfg_hls['XilinxPart'] = 'xcu250-figd2104-2L-e'
         cfg_hls['XilinxPart'] = 'xc7vx690t'
@@ -77,8 +78,8 @@ class BDTConiferSynthesis(BDTTraining):
         import tasks.hls4ml_plotting as plotting
         import json
 
-        # os.environ['PATH'] = '/opt/local/Vitis_HLS/2024.1/bin:' + os.environ['PATH']
-        os.environ['PATH'] = '/opt/local/local.old/Viv2023/Vitis_HLS/2023.1/bin:' + os.environ['PATH']
+        os.environ['PATH'] = '/opt/local/Vitis_HLS/2024.1/bin:' + os.environ['PATH']
+        #os.environ['PATH'] = '/opt/local/local.old/Viv2023/Vitis_HLS/2023.1/bin:' + os.environ['PATH']
         print(os.environ['PATH'])
         os.environ["XILINX_AP_INCLUDE"] = os.path.join(os.path.expandvars("$CMT_BASE"),
             "../HLS_arbitrary_Precision_Types/include/")
@@ -109,7 +110,7 @@ class BDTConiferSynthesis(BDTTraining):
         # plotting.print_dict(cfg_hls)
         # print('-' * 50)
 
-        cnf_model_hls = conifer.model.load_model(os.path.join(self.input()["model"].path, "my_prj.json"))
+        cnf_model_hls = conifer.model.load_model(os.path.join(self.input()["model"].path, "nn_met_calib.json"))
 
         cnf_model_hls.build()
 
@@ -174,7 +175,7 @@ class BDTConiferValidation(BDTValidation):
 
         # predict values for efficiency
         modelFile = self.input()["model"].path
-        cnf_model_hls = conifer.model.load_model(os.path.join(self.input()["model"].path, "my_prj.json"))
+        cnf_model_hls = conifer.model.load_model(os.path.join(self.input()["model"].path, "nn_met_calib.json"))
         cnf_model_hls.compile()
         
         Xp = X.drop(X_train.index)
@@ -255,7 +256,7 @@ class BDTConiferComparison(BDTConiferValidation):
 
         # predict values for efficiency - Conifer model
         modelFile = self.input()["hls"]["model"].path
-        cnf_model_hls = conifer.model.load_model(os.path.join(self.input()["hls"]["model"].path, "my_prj.json"))
+        cnf_model_hls = conifer.model.load_model(os.path.join(self.input()["hls"]["model"].path, "nn_met_calib.json"))
         cnf_model_hls.compile()
         
         Xp = X.drop(X_train.index)
@@ -326,7 +327,7 @@ class BDTConiferEmulatorComparison(BDTConiferComparison):
 
         # predict values for efficiency - Conifer model
         modelFile = self.input()["hls"]["model"].path
-        cnf_model_hls = conifer.model.load_model(os.path.join(self.input()["hls"]["model"].path, "my_prj.json"))
+        cnf_model_hls = conifer.model.load_model(os.path.join(self.input()["hls"]["model"].path, "nn_met_calib.json"))
         cnf_model_hls.compile()
 
         Yp = cnf_model_hls.decision_function(X.to_numpy())
