@@ -38,6 +38,16 @@ Similarly, launching to htcondor is possible via `law run MLValidationWorkflow`.
 
 Analogous tasks are available, named `BDTTraining` and `BDTValidation`.
 
+The current model considers parameters from branch 17 (see `config/hyperopt_bdt.yaml`). You can reproduce the training and validation via
+
+```
+law run BDTTrainingWorkflow --version $TRAININGVERSIONNAME --config-name base --request-cpus 8 --branches 17 --workflow htcondor --transfer-logs
+```
+
+```
+law run BDTValidationWorkflow --version $VERSIONNAME --config-name base --BDTTraining-version $TRAININGVERSIONNAME --BDTValidation-l1-met-threshold 80 --BDTValidation-background-dataset-name background_nopum_new --request-cpus 8 --branches 17 --workflow htcondor
+```
+
 
 ## BDT synthesis
 Task is called `BDTSynthesis`, but can only be run in htcondor via `BDTSynthesisWorkflow` and by adding `--custom-condor-tag +lxfw=true` to the command
