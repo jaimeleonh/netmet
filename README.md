@@ -1,6 +1,7 @@
 # L1 NetMET
 ## Installation
 
+### Full installation
 ```
 git clone https://github.com/jaimeleonh/netmet.git
 cd netmet
@@ -12,7 +13,14 @@ wget https://raw.githubusercontent.com/fastmachinelearning/hls4ml-tutorial/refs/
 source setup.sh  # to be run every time you open a new terminal
 voms-proxy-init -voms cms -valid 192:0   # to be run every time you open a new terminal
 law index --verbose  # to do only after installation or including a new task
+```
 
+### Lite instalation (jupyter-notebook only)
+```
+git clone https://github.com/jaimeleonh/netmet.git
+cd netmet
+git clone https://github.com/jaimeleonh/L1NetMET.git
+source setup_lite.sh
 ```
 
 ## Usage
